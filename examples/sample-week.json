@@ -1,0 +1,248 @@
+{
+  "categories": [
+    {
+      "id": "study",
+      "name": "Study",
+      "color": "#6ea8fe",
+      "target": 6,
+      "tracked": true
+    },
+    {
+      "id": "dsa",
+      "name": "DSA",
+      "color": "#3ecf8e",
+      "target": 5,
+      "tracked": true
+    },
+    {
+      "id": "learn",
+      "name": "Online course",
+      "color": "#c58af9",
+      "target": 5,
+      "tracked": true
+    },
+    {
+      "id": "project",
+      "name": "Project",
+      "color": "#f5b84a",
+      "target": 3,
+      "tracked": true
+    },
+    {
+      "id": "gym",
+      "name": "Gym",
+      "color": "#f2667a",
+      "target": 6,
+      "tracked": true
+    },
+    {
+      "id": "fixed",
+      "name": "Fixed",
+      "color": "#5b6275",
+      "target": 0,
+      "tracked": false
+    }
+  ],
+  "schedule": {
+    "mon": [
+      {
+        "id": "s1",
+        "start": "09:00",
+        "end": "16:00",
+        "title": "Classes",
+        "cat": "fixed"
+      },
+      {
+        "id": "s2",
+        "start": "18:00",
+        "end": "19:15",
+        "title": "Gym: Push",
+        "cat": "gym"
+      },
+      {
+        "id": "s3",
+        "start": "20:00",
+        "end": "21:30",
+        "title": "DSA: new concept + 2 problems",
+        "cat": "dsa"
+      }
+    ],
+    "tue": [
+      {
+        "id": "s4",
+        "start": "09:00",
+        "end": "16:00",
+        "title": "Classes",
+        "cat": "fixed"
+      },
+      {
+        "id": "s5",
+        "start": "16:30",
+        "end": "18:00",
+        "title": "Revise subject A",
+        "cat": "study"
+      },
+      {
+        "id": "s6",
+        "start": "18:15",
+        "end": "19:45",
+        "title": "Gym: Pull",
+        "cat": "gym"
+      },
+      {
+        "id": "s7",
+        "start": "20:30",
+        "end": "21:30",
+        "title": "Online course",
+        "cat": "learn"
+      }
+    ],
+    "wed": [
+      {
+        "id": "s8",
+        "start": "09:00",
+        "end": "16:00",
+        "title": "Classes",
+        "cat": "fixed"
+      },
+      {
+        "id": "s9",
+        "start": "16:30",
+        "end": "18:00",
+        "title": "Revise subject B",
+        "cat": "study"
+      },
+      {
+        "id": "s10",
+        "start": "18:30",
+        "end": "19:30",
+        "title": "DSA practice",
+        "cat": "dsa"
+      },
+      {
+        "id": "s11",
+        "start": "20:30",
+        "end": "21:30",
+        "title": "Online course",
+        "cat": "learn"
+      }
+    ],
+    "thu": [
+      {
+        "id": "s12",
+        "start": "09:00",
+        "end": "16:00",
+        "title": "Classes",
+        "cat": "fixed"
+      },
+      {
+        "id": "s13",
+        "start": "18:00",
+        "end": "19:15",
+        "title": "Gym: Push",
+        "cat": "gym"
+      },
+      {
+        "id": "s14",
+        "start": "20:00",
+        "end": "21:30",
+        "title": "DSA: new concept + revision",
+        "cat": "dsa"
+      }
+    ],
+    "fri": [
+      {
+        "id": "s15",
+        "start": "09:00",
+        "end": "13:00",
+        "title": "Classes",
+        "cat": "fixed"
+      },
+      {
+        "id": "s16",
+        "start": "15:00",
+        "end": "16:30",
+        "title": "Revise subject C",
+        "cat": "study"
+      },
+      {
+        "id": "s17",
+        "start": "17:00",
+        "end": "18:30",
+        "title": "Online course",
+        "cat": "learn"
+      },
+      {
+        "id": "s18",
+        "start": "18:45",
+        "end": "20:15",
+        "title": "Gym: Pull",
+        "cat": "gym"
+      }
+    ],
+    "sat": [
+      {
+        "id": "s19",
+        "start": "09:30",
+        "end": "11:00",
+        "title": "Project work",
+        "cat": "project"
+      },
+      {
+        "id": "s20",
+        "start": "11:15",
+        "end": "12:45",
+        "title": "Online course",
+        "cat": "learn"
+      },
+      {
+        "id": "s21",
+        "start": "14:00",
+        "end": "15:30",
+        "title": "Weekly subject revision",
+        "cat": "study"
+      },
+      {
+        "id": "s22",
+        "start": "18:00",
+        "end": "19:45",
+        "title": "Gym: Legs",
+        "cat": "gym"
+      }
+    ],
+    "sun": [
+      {
+        "id": "s23",
+        "start": "09:00",
+        "end": "10:30",
+        "title": "DSA timed practice",
+        "cat": "dsa"
+      },
+      {
+        "id": "s24",
+        "start": "10:45",
+        "end": "12:15",
+        "title": "Project work",
+        "cat": "project"
+      },
+      {
+        "id": "s25",
+        "start": "13:30",
+        "end": "15:00",
+        "title": "Online course",
+        "cat": "learn"
+      },
+      {
+        "id": "s26",
+        "start": "20:30",
+        "end": "21:00",
+        "title": "Plan next week",
+        "cat": "study"
+      }
+    ]
+  },
+  "logs": {},
+  "settings": {
+    "threshold": 70
+  }
+}
