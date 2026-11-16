@@ -909,7 +909,14 @@ function scheduleBeep(secs) {
     });
   } catch (e) { /* no sound available: the vibration and the screen still signal the end */ }
 }
+let rangTimer = null;
+const restRunning = () => Boolean(ui.rest) && Date.now() < ui.rest.end;
+function clearRang() {
+  clearTimeout(rangTimer);
+  document.querySelector('#rest')?.classList.remove('rang');
+}
 function startRest(secs = restLen()) {
+  clearRang();
   ui.rest = { end: Date.now() + secs * 1000, total: secs };
   scheduleBeep(secs);
   clearInterval(restTick);
@@ -918,6 +925,7 @@ function startRest(secs = restLen()) {
 }
 function stopRest() {
   ui.rest = null;
+  clearRang();
   cancelBeep();
   clearInterval(restTick);
   paintRest();
@@ -930,7 +938,7 @@ function paintRest() {
     clearInterval(restTick);
     beeps = [];
     navigator.vibrate?.([220, 120, 220]);
-    if (box) { box.classList.add('rang'); setTimeout(() => box.classList.remove('rang'), 2600); }
+    if (box) { box.classList.add('rang'); clearTimeout(rangTimer); rangTimer = setTimeout(() => { box.classList.remove('rang'); paintRest(); }, 2600); }
   }
   if (!box) return;
   const left = ui.rest ? Math.max(0, (ui.rest.end - Date.now()) / 1000) : 0;
@@ -958,11 +966,11 @@ document.addEventListener('click', (e) => {
     state.settings.rest = Number(a.dataset.s);
     save();
     document.querySelectorAll('[data-raction="len"]').forEach((b) => b.classList.toggle('sel', b === a));
-    if (ui.rest) startRest(); else paintRest();
+    if (restRunning()) startRest(); else paintRest();
   } else if (a.dataset.raction === 'more') {
-    if (ui.rest) { const left = (ui.rest.end - Date.now()) / 1000 + 15; ui.rest = { end: Date.now() + left * 1000, total: Math.max(ui.rest.total, left) }; scheduleBeep(left); paintRest(); }
+    if (restRunning()) { const left = (ui.rest.end - Date.now()) / 1000 + 15; ui.rest = { end: Date.now() + left * 1000, total: Math.max(ui.rest.total, left) }; scheduleBeep(left); paintRest(); }
     else startRest(restLen() + 15);
-  } else if (ui.rest) stopRest(); else startRest();
+  } else if (restRunning()) stopRest(); else startRest();
 });
 // Finishing a set (leaving the reps box with a number in it) starts the rest
 document.addEventListener('change', (e) => { if (e.target.dataset.greps !== undefined && e.target.value !== '') startRest(); });
