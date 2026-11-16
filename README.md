@@ -17,6 +17,7 @@ No backend, no account, no build step. Open `index.html` and go.
 - **Fair scoring** — today's blocks that haven't ended yet aren't counted against your weekly average; days before you started are left blank.
 - **Catch-up nudge** — if yesterday has unmarked blocks (like "sleep on time"), Today offers a one-tap way back.
 - **Motion** — a welcome sequence, a seven-column page wipe between tabs, and feedback on every mark. Respects reduced-motion.
+- **Workout log** — tap a gym block to open its workout: log kg and reps per set against a fixed target, add extra sets on the spot, and see last session's numbers with a suggested weight for today.
 - **Keyboard** — ← and → step through days and weeks.
 - **Private** — data lives in your browser's `localStorage`. Export/import JSON to back up or switch devices.
 - **Mobile-friendly** — works on phone and laptop.

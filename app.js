@@ -59,6 +59,19 @@ const SAMPLE = {
     ]
   },
   logs: {},
+  workouts: [
+    { id: 'push', name: 'Push', exercises: [
+      { name: 'Bench press', sets: 4, reps: '6-8' }, { name: 'Shoulder press', sets: 3, reps: '8-10' },
+      { name: 'Incline dumbbell press', sets: 3, reps: '10' }, { name: 'Lateral raise', sets: 3, reps: '12-15' },
+      { name: 'Triceps pushdown', sets: 3, reps: '10-12' }] },
+    { id: 'pull', name: 'Pull', exercises: [
+      { name: 'Lat pulldown', sets: 4, reps: '8-10' }, { name: 'Barbell row', sets: 3, reps: '8-10' },
+      { name: 'Face pull', sets: 3, reps: '15' }, { name: 'Barbell curl', sets: 3, reps: '10-12' },
+      { name: 'Plank', sets: 3, reps: '45 sec' }] },
+    { id: 'legs', name: 'Legs', exercises: [
+      { name: 'Squat', sets: 4, reps: '6-8' }, { name: 'Leg press', sets: 3, reps: '10-12' },
+      { name: 'Hamstring curl', sets: 3, reps: '10-12' }, { name: 'Standing calf raise', sets: 4, reps: '12-15' }] }
+  ],
   settings: { threshold: 70 }
 };
 
@@ -92,6 +105,7 @@ function normalize(s) {
     categories: Array.isArray(s.categories) ? s.categories : [],
     schedule: Object.fromEntries(DAYS.map((k) => [k, Array.isArray(s.schedule?.[k]) ? s.schedule[k] : []])),
     logs: s.logs && typeof s.logs === 'object' && !Array.isArray(s.logs) ? s.logs : {},
+    workouts: Array.isArray(s.workouts) ? s.workouts.filter((w) => w && Array.isArray(w.exercises)) : [],
     settings: { ...base.settings, ...(s.settings || {}) },
     presetVersion: s.presetVersion ?? null
   };
@@ -124,7 +138,7 @@ const nowMin = () => { const n = new Date(); return n.getHours() * 60 + n.getMin
 
 // Past days are frozen: each keeps a copy of the blocks it had, so editing the
 // timetable later never rewrites history. Today and future days follow the live timetable.
-const snapshot = (key) => blocksFor(key).map((b) => ({ id: b.id, start: b.start, end: b.end, title: b.title, cat: b.cat, tracked: isTracked(b) }));
+const snapshot = (key) => blocksFor(key).map((b) => ({ id: b.id, start: b.start, end: b.end, title: b.title, cat: b.cat, workout: b.workout, tracked: isTracked(b) }));
 function blocksOn(dIso) {
   const log = state.logs[dIso];
   if (dIso < todayIso() && log?.blocks) return log.blocks;
@@ -150,8 +164,9 @@ function freezePast() {
 function applyPreset() {
   const p = window.WEEKGRID_PRESET;
   if (!p || !p.schedule || !Array.isArray(p.categories) || state.presetVersion === p.version) return;
-  const fresh = normalize({ categories: clone(p.categories), schedule: clone(p.schedule) });
+  const fresh = normalize({ categories: clone(p.categories), schedule: clone(p.schedule), workouts: clone(p.workouts || state.workouts) });
   state.categories = fresh.categories;
+  state.workouts = fresh.workouts;
   state.schedule = fresh.schedule;
   state.presetVersion = p.version;
   save();
@@ -330,8 +345,12 @@ function renderToday() {
     return `
       <div class="block ${tracked ? `st-${m || 'none'}` : 'fixed'}" data-bid="${b.id}" style="--c:${tone(c?.color)};--i:${i}">
         <div class="time"><span>${esc(b.start)}</span> <span class="to">${esc(b.end)}</span></div>
-        <div><div class="title">${esc(b.title || 'Untitled')}</div>
-        ${tracked ? `<div class="meta"><b>${esc(c?.name || 'No category')}</b>${fmtH(hours(b))}</div>` : ''}</div>
+        ${(() => {
+          const w = tracked && workoutFor(b);
+          const meta = tracked ? `<div class="meta"><b>${esc(c?.name || 'No category')}</b>${fmtH(hours(b))}${w ? `<span class="open-wo">${w.exercises.length} exercises ›</span>` : ''}</div>` : '';
+          const inner = `<div class="title">${esc(b.title || 'Untitled')}</div>${meta}`;
+          return w ? `<button class="block-main" data-action="open-gym" data-id="${b.id}" aria-label="Open ${esc(w.name)} workout">${inner}</button>` : `<div>${inner}</div>`;
+        })()}
         ${tracked ? `<div class="marks">${btn('done', '✓', 'Done')}${btn('partial', '½', 'Partial')}${btn('missed', '✕', 'Missed')}</div>` : '<div></div>'}
       </div>`;
   }).join('');
@@ -520,6 +539,11 @@ function renderSettings() {
     ${cats || '<div class="muted">No categories.</div>'}
     <button class="btn primary" data-action="add-cat" style="margin-top:6px">+ Add category</button>
 
+    <h3>Workouts</h3>
+    <p class="muted small">A gym block opens the workout whose name appears in its title, like "Gym: Push A". Targets stay fixed while you log what you actually did.</p>
+    ${renderWorkoutEditor()}
+    <button class="btn primary" data-waction="add-wo" style="margin-top:6px">+ Add workout</button>
+
     <h3>Streak</h3>
     <div class="row"><span>A day counts toward your streak at</span>
       <input type="number" class="field" id="threshold" min="1" max="100" value="${esc(state.settings.threshold)}" style="width:70px" />%</div>
@@ -601,6 +625,256 @@ function intro() {
   document.addEventListener('keydown', leave, { once: true });
   setTimeout(leave, 3300);
 }
+
+// ---------- Workouts ----------
+// A gym block opens its workout. Each exercise logs kg and reps per set; targets stay fixed,
+// sets can be added on the spot, and the last session's numbers suggest today's weight.
+const KG_STEP = 2.5;
+const exKey = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+function parseReps(s) {
+  const nums = String(s || '').match(/\d+(\.\d+)?/g) || [];
+  return { target: nums.length ? Number(nums[nums.length - 1]) : null, unit: /sec|\bs\b/i.test(s) ? 's' : 'reps' };
+}
+function workoutFor(b) {
+  const list = state.workouts || [];
+  if (b.workout) { const w = list.find((x) => x.id === b.workout); if (w) return w; }
+  const t = String(b.title || '').toLowerCase();
+  return list.filter((w) => w.name && t.includes(w.name.toLowerCase())).sort((a, z) => z.name.length - a.name.length)[0] || null;
+}
+const gymLog = (dIso) => logFor(dIso).gym || {};
+function setsFor(dIso, key, planned) {
+  const arr = gymLog(dIso)[key] || [];
+  const n = Math.max(planned, arr.length);
+  return Array.from({ length: n }, (_, i) => arr[i] || {});
+}
+const filled = (s) => s && s.reps !== undefined && s.reps !== '' && s.reps !== null;
+function lastSession(key, beforeIso) {
+  const dates = Object.keys(state.logs).filter((d) => d < beforeIso && (state.logs[d].gym?.[key] || []).some(filled)).sort();
+  const d = dates[dates.length - 1];
+  return d ? { date: d, sets: state.logs[d].gym[key].filter(filled) } : null;
+}
+function suggestion(ex, last) {
+  const { target, unit } = parseReps(ex.reps);
+  if (!last) return null;
+  const kgs = last.sets.map((s) => Number(s.kg) || 0);
+  const top = Math.max(0, ...kgs);
+  const hit = target && last.sets.length >= Number(ex.sets) && last.sets.every((s) => Number(s.reps) >= target);
+  if (unit === 's') return hit ? `Hold ${target + 5} s this time` : `Aim for ${target} s on every set`;
+  if (!top) return hit ? 'You hit every set. Add weight or reps' : `Aim for ${target} reps on every set`;
+  return hit ? `Try ${+(top + KG_STEP).toFixed(2)} kg` : `Stay at ${top} kg until you hit ${target} on every set`;
+}
+const fmtKg = (v) => (v === '' || v === undefined || v === null ? '–' : `${+v} kg`);
+function exStatus(dIso, ex) {
+  const done = setsFor(dIso, exKey(ex.name), Number(ex.sets) || 1).filter(filled).length;
+  return { done, total: Math.max(Number(ex.sets) || 1, (gymLog(dIso)[exKey(ex.name)] || []).length) };
+}
+
+function renderSheet() {
+  const el = $('#sheet');
+  const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
+  const w = b && workoutFor(b);
+  if (!b || !w) { el.classList.remove('open'); return; }
+  const c = tone(catOf(b.cat)?.color);
+  const total = w.exercises.reduce((a, ex) => a + (Number(ex.sets) || 1), 0);
+  const done = w.exercises.reduce((a, ex) => a + Math.min(exStatus(ui.date, ex).done, Number(ex.sets) || 1), 0);
+
+  const rows = w.exercises.map((ex, i) => {
+    const key = exKey(ex.name);
+    const open = ui.openEx === key;
+    const { target, unit } = parseReps(ex.reps);
+    const st = exStatus(ui.date, ex);
+    const last = lastSession(key, ui.date);
+    const tip = suggestion(ex, last);
+    const sugKg = tip && /^Try ([\d.]+) kg/.exec(tip)?.[1];
+    const lastKg = last ? Math.max(0, ...last.sets.map((s) => Number(s.kg) || 0)) : 0;
+    const sets = setsFor(ui.date, key, Number(ex.sets) || 1);
+    const setRows = sets.map((s, j) => {
+      const extra = j >= (Number(ex.sets) || 1);
+      const hit = filled(s) && target && Number(s.reps) >= target;
+      return `
+        <div class="set ${filled(s) ? 'logged' : ''} ${hit ? 'hit' : ''}" data-set="${j}">
+          <span class="set-n">${extra ? '+' : ''}${j + 1}</span>
+          <label class="set-in"><input type="number" inputmode="decimal" step="0.5" min="0" data-gkg="${j}" value="${esc(s.kg ?? '')}" placeholder="${esc((j && sets[j - 1].kg) || sugKg || (lastKg || ''))}" aria-label="Set ${j + 1} weight" /><span>kg</span></label>
+          <label class="set-in reps"><input type="number" inputmode="numeric" min="0" data-greps="${j}" value="${esc(s.reps ?? '')}" placeholder="${target ?? ''}" aria-label="Set ${j + 1} ${unit}" /><span>/ ${target ?? '?'}${unit === 's' ? ' s' : ''}</span></label>
+          ${extra ? `<button class="set-x" data-gaction="del-set" data-set="${j}" aria-label="Remove set ${j + 1}">✕</button>` : '<span></span>'}
+        </div>`;
+    }).join('');
+    return `
+      <div class="ex ${open ? 'open' : ''} ${st.done >= (Number(ex.sets) || 1) ? 'complete' : ''}" data-ex="${esc(key)}" style="--i:${i}">
+        <button class="ex-head" data-gaction="toggle-ex" data-ex="${esc(key)}" aria-expanded="${open}">
+          <span class="ex-name">${esc(ex.name)}</span>
+          <span class="ex-plan">${esc(ex.sets)} × ${esc(ex.reps)}</span>
+          <span class="ex-count"><b>${st.done}</b>/${st.total}</span>
+        </button>
+        <div class="ex-body"><div class="ex-in">
+          ${last ? `<div class="last">Last time, ${esc(shortDate(fromIso(last.date)))}: ${last.sets.map((s) => `${fmtKg(s.kg)} × ${esc(s.reps)}`).join(', ')}</div>` : '<div class="last">First time logging this one.</div>'}
+          ${tip ? `<div class="tip">${esc(tip)}</div>` : ''}
+          <div class="sets">${setRows}</div>
+          <button class="btn add-set" data-gaction="add-set">+ Add a set</button>
+        </div></div>
+      </div>`;
+  }).join('');
+
+  const isDone = logFor(ui.date).marks?.[b.id] === 'done';
+  el.innerHTML = `
+    <div class="sheet-back" data-gaction="close"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="${esc(w.name)}" style="--c:${c}">
+      <div class="grab" data-gaction="close"></div>
+      <div class="sheet-top">
+        <div><div class="sheet-title">${esc(w.name)}</div>
+        <div class="muted small">${esc(fmtDate(fromIso(ui.date)))}</div></div>
+        <button class="nav-btn" data-gaction="close" aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-prog"><span id="gym-done">${done}</span> of ${total} sets logged
+        <div class="cat-track"><div class="cat-fill" id="gym-fill" style="--w:${total ? Math.round((done / total) * 100) : 0}%;--c:${c}"></div></div></div>
+      <div class="exs">${rows || '<div class="empty-state">This workout has no exercises yet. Add some in Settings.</div>'}</div>
+      <button class="btn primary finish" data-gaction="finish" ${isDone ? 'disabled' : ''}>${isDone ? 'Gym marked done' : 'Mark gym done'}</button>
+    </div>`;
+  el.classList.add('open');
+}
+
+function openGym(id) {
+  ui.gym = id;
+  ui.openEx = null;
+  renderSheet();
+  document.body.classList.add('locked');
+}
+function closeGym() {
+  const el = $('#sheet');
+  el.classList.add('closing');
+  document.body.classList.remove('locked');
+  setTimeout(() => { el.classList.remove('open', 'closing'); el.innerHTML = ''; ui.gym = null; render(false); }, reduced() ? 0 : 280);
+}
+function gymWrite(key, j, field, value) {
+  const log = state.logs[ui.date] || (state.logs[ui.date] = { marks: {}, note: '' });
+  log.gym = log.gym || {};
+  const arr = log.gym[key] || (log.gym[key] = []);
+  while (arr.length <= j) arr.push({});
+  arr[j] = { ...arr[j], [field]: value };
+  save();
+}
+function refreshGymProgress() {
+  const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
+  const w = b && workoutFor(b);
+  if (!w) return;
+  let done = 0, total = 0;
+  for (const ex of w.exercises) {
+    const n = Number(ex.sets) || 1;
+    const st = exStatus(ui.date, ex);
+    total += n; done += Math.min(st.done, n);
+    const node = document.querySelector(`.ex[data-ex="${CSS.escape(exKey(ex.name))}"]`);
+    if (node) { node.querySelector('.ex-count').innerHTML = `<b>${st.done}</b>/${st.total}`; node.classList.toggle('complete', st.done >= n); }
+  }
+  $('#gym-done').textContent = done;
+  $('#gym-fill').style.setProperty('--w', `${total ? Math.round((done / total) * 100) : 0}%`);
+}
+
+document.addEventListener('click', (e) => {
+  const opener = e.target.closest('[data-action="open-gym"]');
+  if (opener) { openGym(opener.dataset.id); return; }
+  const g = e.target.closest('[data-gaction]');
+  if (!g) return;
+  const exEl = g.closest('.ex');
+  const key = exEl?.dataset.ex;
+  switch (g.dataset.gaction) {
+    case 'close': closeGym(); return;
+    case 'toggle-ex': ui.openEx = ui.openEx === g.dataset.ex ? null : g.dataset.ex; break;
+    case 'add-set': {
+      const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
+      const ex = workoutFor(b).exercises.find((x) => exKey(x.name) === key);
+      const sets = setsFor(ui.date, key, Number(ex.sets) || 1);
+      gymWrite(key, sets.length, 'reps', '');
+      break;
+    }
+    case 'del-set': {
+      const arr = state.logs[ui.date]?.gym?.[key];
+      if (arr) { arr.splice(Number(g.dataset.set), 1); save(); }
+      break;
+    }
+    case 'finish': {
+      const prev = dayStats(ui.date).pct || 0;
+      const id = ui.gym;
+      if (logFor(ui.date).marks?.[id] !== 'done') setMark(ui.date, id, 'done');
+      closeGym();
+      setTimeout(() => markFx(id, 'done', prev), reduced() ? 0 : 320);
+      return;
+    }
+    default: return;
+  }
+  renderSheet();
+  if (g.dataset.gaction === 'add-set') document.querySelector(`.ex[data-ex="${CSS.escape(key)}"] .set:last-child [data-gkg]`)?.focus();
+});
+
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  const key = t.closest('.ex')?.dataset.ex;
+  if (key && (t.dataset.gkg || t.dataset.greps)) {
+    const j = Number(t.dataset.gkg ?? t.dataset.greps);
+    const row = t.closest('.set');
+    gymWrite(key, j, t.dataset.gkg !== undefined ? 'kg' : 'reps', t.value);
+    // Typing reps with the weight left blank uses the suggested weight shown in the box
+    const kgIn = row.querySelector('[data-gkg]');
+    if (t.dataset.greps !== undefined && t.value !== '' && kgIn.value === '' && kgIn.placeholder) {
+      kgIn.value = kgIn.placeholder;
+      gymWrite(key, j, 'kg', kgIn.value);
+    }
+    const next = row.nextElementSibling?.querySelector('[data-gkg]');
+    if (t.dataset.gkg !== undefined && next && next.value === '') next.placeholder = t.value || next.placeholder;
+    const s = setsFor(ui.date, key, 0)[j] || {};
+    const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
+    const ex = workoutFor(b)?.exercises.find((x) => exKey(x.name) === key);
+    const target = parseReps(ex?.reps).target;
+    row.classList.toggle('logged', filled(s));
+    row.classList.toggle('hit', filled(s) && target && Number(s.reps) >= target);
+    refreshGymProgress();
+  }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.gym) closeGym(); });
+
+// ---------- Workouts editor (Settings) ----------
+function renderWorkoutEditor() {
+  const ws = state.workouts || [];
+  return ws.map((w, wi) => `
+    <div class="panel wo" data-wo="${esc(w.id)}" style="--i:${wi}">
+      <div class="row space">
+        <input type="text" class="field wo-name" value="${esc(w.name)}" data-wfield="name" aria-label="Workout name" />
+        <button class="btn danger icon" data-waction="del-wo" aria-label="Delete workout">✕</button>
+      </div>
+      ${w.exercises.map((ex, xi) => `
+        <div class="edit-row wo-ex" data-x="${xi}">
+          <input type="text" value="${esc(ex.name)}" data-xfield="name" placeholder="Exercise" aria-label="Exercise" />
+          <input type="number" min="1" value="${esc(ex.sets)}" data-xfield="sets" aria-label="Sets" />
+          <input type="text" value="${esc(ex.reps)}" data-xfield="reps" placeholder="8-10" aria-label="Target reps" />
+          <button class="btn danger icon" data-waction="del-ex" aria-label="Delete exercise">✕</button>
+        </div>`).join('')}
+      <button class="btn" data-waction="add-ex">+ Add exercise</button>
+    </div>`).join('');
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-waction]');
+  if (!a) return;
+  state.workouts = state.workouts || [];
+  const w = state.workouts.find((x) => x.id === a.closest('[data-wo]')?.dataset.wo);
+  switch (a.dataset.waction) {
+    case 'add-wo': state.workouts.push({ id: uid(), name: 'New workout', exercises: [] }); break;
+    case 'del-wo': if (!confirm(`Delete ${w.name}? Logged sets are kept.`)) return; state.workouts = state.workouts.filter((x) => x !== w); break;
+    case 'add-ex': w.exercises.push({ name: '', sets: 3, reps: '10' }); break;
+    case 'del-ex': w.exercises.splice(Number(a.closest('[data-x]').dataset.x), 1); break;
+    default: return;
+  }
+  save();
+  render(false);
+});
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  const wEl = t.closest('[data-wo]');
+  if (!wEl || !(t.dataset.wfield || t.dataset.xfield)) return;
+  const w = state.workouts.find((x) => x.id === wEl.dataset.wo);
+  if (!w) return;
+  if (t.dataset.wfield) w.name = t.value;
+  else { const ex = w.exercises[Number(t.closest('[data-x]').dataset.x)]; ex[t.dataset.xfield] = t.dataset.xfield === 'sets' ? Math.max(1, Number(t.value) || 1) : t.value; }
+  save();
+});
 
 // ---------- Rendering / navigation ----------
 const RENDER = { today: renderToday, week: renderWeek, timetable: renderTimetable, settings: renderSettings };
@@ -708,6 +982,7 @@ document.addEventListener('click', (e) => {
       if (!confirm('Replace your timetable and categories with the sample week? Your logs are kept.')) return;
       state.categories = clone(SAMPLE.categories);
       state.schedule = clone(SAMPLE.schedule);
+      state.workouts = clone(SAMPLE.workouts);
       save();
       toast('Sample week loaded');
       break;

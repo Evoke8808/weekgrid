@@ -405,6 +405,69 @@ input[type="checkbox"] { accent-color: var(--mint); width: 16px; height: 16px; }
 .i-hi { margin-top: 18px; font-size: 22px; font-weight: 700; color: var(--mint); animation: rise 0.7s var(--ease) 2s both; }
 .i-sub { margin-top: 4px; color: var(--muted); animation: rise 0.7s var(--ease) 2.15s both; }
 
+/* ---------- Workout sheet ---------- */
+.block-main { all: unset; cursor: pointer; display: block; min-width: 0; border-radius: 8px; }
+.block-main:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+.open-wo { margin-left: 10px; color: var(--c); font-weight: 600; transition: margin 0.2s var(--ease); }
+.block-main:hover .open-wo { margin-left: 14px; }
+body.locked { overflow: hidden; }
+
+#sheet { position: fixed; inset: 0; z-index: 70; display: none; }
+#sheet.open { display: block; }
+.sheet-back { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: fade 0.3s ease both; }
+.sheet-card {
+  position: absolute; left: 50%; bottom: 0; width: min(720px, 100%); max-height: 92vh; overflow-y: auto; overscroll-behavior: contain;
+  transform: translateX(-50%); padding: 8px 18px calc(22px + env(safe-area-inset-bottom));
+  background: #070707; border: 1px solid var(--line); border-bottom: 0; border-radius: 24px 24px 0 0;
+  box-shadow: 0 -30px 80px -20px color-mix(in srgb, var(--c) 30%, transparent);
+  animation: sheet-up 0.5s var(--ease) both;
+}
+#sheet.closing .sheet-card { animation: sheet-down 0.28s ease-in both; }
+#sheet.closing .sheet-back { animation: fade 0.28s ease reverse both; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes sheet-up { from { transform: translate(-50%, 100%); } }
+@keyframes sheet-down { to { transform: translate(-50%, 100%); } }
+.grab { width: 44px; height: 5px; border-radius: 3px; background: var(--dim); margin: 4px auto 12px; cursor: pointer; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-title { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--c); line-height: 1.1; }
+.sheet-prog { margin: 14px 0 16px; font-size: 14px; color: var(--muted); }
+.sheet-prog #gym-done { color: var(--text); font-weight: 700; }
+.sheet-prog .cat-fill { transition: width 0.5s var(--ease); }
+
+.exs { display: flex; flex-direction: column; gap: 8px; }
+.ex { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); overflow: hidden; transition: border-color 0.3s; animation: rise 0.45s var(--ease) both; animation-delay: calc(0.12s + var(--i) * 45ms); }
+.ex.open { border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
+.ex.complete .ex-name::after { content: " ✓"; color: var(--mint); }
+.ex-head { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 14px 16px; }
+.ex-head:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; border-radius: 16px; }
+.ex-name { font-weight: 700; font-size: 17px; }
+.ex-plan { font-size: 13px; color: var(--muted); }
+.ex-count { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+.ex-count b { color: var(--c); }
+.ex-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.4s var(--ease); }
+.ex.open .ex-body { grid-template-rows: 1fr; }
+.ex-in { overflow: hidden; padding: 0 16px; }
+.ex.open .ex-in { padding-bottom: 14px; }
+.last { font-size: 13px; color: var(--muted); }
+.tip { margin-top: 6px; display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 13px; font-weight: 700; color: #000; background: var(--c); }
+.sets { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 10px; }
+.set { display: grid; grid-template-columns: 28px 1fr 1fr 32px; gap: 8px; align-items: center; transition: transform 0.25s var(--spring); }
+.set-n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--raise); color: var(--muted); transition: background 0.25s, color 0.25s; }
+.set.logged .set-n { background: color-mix(in srgb, var(--c) 30%, var(--raise)); color: var(--text); }
+.set.hit .set-n { background: var(--mint); color: #000; animation: pop 0.45s var(--spring); }
+.set-in { display: flex; align-items: center; gap: 6px; background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; transition: border-color 0.2s; }
+.set-in:focus-within { border-color: var(--c); }
+.set-in input { all: unset; width: 100%; min-width: 0; padding: 10px 0; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+.set-in input::placeholder { color: var(--dim); font-weight: 600; }
+.set-in span { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.set-x { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--coral); }
+.add-set { width: 100%; border-style: dashed; color: var(--c); }
+.finish { width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; }
+.finish:disabled { opacity: 0.5; cursor: default; transform: none; }
+.wo { margin-bottom: 10px; }
+.wo-name { flex: 1; font-weight: 700; }
+.wo-ex { grid-template-columns: 1fr 64px 100px auto; margin-top: 8px; }
+
 @media (max-width: 560px) {
   .block { grid-template-columns: 1fr auto; gap: 8px 12px; }
   .block .time { grid-column: 1 / -1; }
@@ -414,9 +477,14 @@ input[type="checkbox"] { accent-color: var(--mint); width: 16px; height: 16px; }
   .edit-row { grid-template-columns: 1fr 1fr; }
   .edit-row .title-in { grid-column: 1 / -1; }
   .cat-edit { grid-template-columns: 1fr 52px; }
+  .wo-ex { grid-template-columns: 1fr 56px 80px auto; }
+  .wo-ex .title-in { grid-column: auto; }
   .heat { grid-template-columns: 44px repeat(7, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+.set-in input::-webkit-outer-spin-button, .set-in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.set-in input[type="number"] { -moz-appearance: textfield; }
