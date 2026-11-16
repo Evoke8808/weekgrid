@@ -95,7 +95,7 @@ const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: 'long', day: '
 
 // ---------- State ----------
 function emptyState() {
-  return { categories: [], schedule: Object.fromEntries(DAYS.map((k) => [k, []])), logs: {}, settings: { threshold: 70 } };
+  return { categories: [], schedule: Object.fromEntries(DAYS.map((k) => [k, []])), logs: {}, settings: { threshold: 70, rest: 90 } };
 }
 
 function normalize(s) {
@@ -761,9 +761,11 @@ function renderSheet() {
       <div class="sheet-prog"><span id="gym-done">${done}</span> of ${total} sets logged
         <div class="cat-track"><div class="cat-fill" id="gym-fill" style="--w:${total ? Math.round((done / total) * 100) : 0}%;--c:${c}"></div></div></div>
       <div class="exs">${rows || '<div class="empty-state">This workout has no exercises yet. Add some in Settings.</div>'}</div>
+      ${restBar()}
       <button class="btn primary finish" data-gaction="finish" ${isDone ? 'disabled' : ''}>${isDone ? 'Gym marked done' : 'Mark gym done'}</button>
     </div>`;
   el.classList.add('open');
+  paintRest();
 }
 
 function openGym(id) {
@@ -773,6 +775,7 @@ function openGym(id) {
   document.body.classList.add('locked');
 }
 function closeGym() {
+  stopRest();
   const el = $('#sheet');
   el.classList.add('closing');
   document.body.classList.remove('locked');
@@ -863,6 +866,93 @@ document.addEventListener('input', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.gym) closeGym(); });
+
+// ---------- Rest timer ----------
+// Starts when a set's reps are entered. Runs off a fixed end time, so it stays right
+// even if the page is re-drawn or the phone sleeps for a moment.
+const REST_CHOICES = [60, 90, 120];
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`;
+const restLen = () => Number(state.settings.rest) || 90;
+let restTick = null;
+let audio = null;
+let beeps = [];
+
+function cancelBeep() { for (const o of beeps) { try { o.stop(); } catch (e) { /* already stopped */ } } beeps = []; }
+function scheduleBeep(secs) {
+  cancelBeep();
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    [0, 0.28, 0.56].forEach((off, i) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      const at = audio.currentTime + secs + off;
+      o.frequency.value = i === 2 ? 1175 : 880;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.35, at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+      o.connect(g).connect(audio.destination);
+      o.start(at); o.stop(at + 0.25);
+      beeps.push(o);
+    });
+  } catch (e) { /* no sound available: the vibration and the screen still signal the end */ }
+}
+function startRest(secs = restLen()) {
+  ui.rest = { end: Date.now() + secs * 1000, total: secs };
+  scheduleBeep(secs);
+  clearInterval(restTick);
+  restTick = setInterval(paintRest, 200);
+  paintRest();
+}
+function stopRest() {
+  ui.rest = null;
+  cancelBeep();
+  clearInterval(restTick);
+  paintRest();
+}
+function paintRest() {
+  const box = document.querySelector('#rest');
+  const r = ui.rest;
+  if (r && Date.now() >= r.end) {
+    ui.rest = null;
+    clearInterval(restTick);
+    beeps = [];
+    navigator.vibrate?.([220, 120, 220]);
+    if (box) { box.classList.add('rang'); setTimeout(() => box.classList.remove('rang'), 2600); }
+  }
+  if (!box) return;
+  const left = ui.rest ? Math.max(0, (ui.rest.end - Date.now()) / 1000) : 0;
+  box.classList.toggle('on', Boolean(ui.rest));
+  box.querySelector('#rest-time').textContent = ui.rest ? mmss(Math.ceil(left)) : box.classList.contains('rang') ? 'Go' : mmss(restLen());
+  box.querySelector('#rest-fill').style.width = ui.rest ? `${(left / ui.rest.total) * 100}%` : '0%';
+  box.querySelector('[data-raction="toggle"]').textContent = ui.rest ? 'Skip' : 'Start rest';
+}
+function restBar() {
+  return `
+    <div class="rest ${ui.rest ? 'on' : ''}" id="rest">
+      <div class="rest-top"><span class="rest-label">Rest</span><span id="rest-time">${mmss(restLen())}</span></div>
+      <div class="rest-track"><div id="rest-fill"></div></div>
+      <div class="rest-row">
+        ${REST_CHOICES.map((s) => `<button class="chip-btn ${restLen() === s ? 'sel' : ''}" data-raction="len" data-s="${s}">${mmss(s)}</button>`).join('')}
+        <button class="chip-btn" data-raction="more">+15 s</button>
+        <button class="chip-btn go" data-raction="toggle">${ui.rest ? 'Skip' : 'Start rest'}</button>
+      </div>
+    </div>`;
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-raction]');
+  if (!a) return;
+  if (a.dataset.raction === 'len') {
+    state.settings.rest = Number(a.dataset.s);
+    save();
+    document.querySelectorAll('[data-raction="len"]').forEach((b) => b.classList.toggle('sel', b === a));
+    if (ui.rest) startRest(); else paintRest();
+  } else if (a.dataset.raction === 'more') {
+    if (ui.rest) { const left = (ui.rest.end - Date.now()) / 1000 + 15; ui.rest = { end: Date.now() + left * 1000, total: Math.max(ui.rest.total, left) }; scheduleBeep(left); paintRest(); }
+    else startRest(restLen() + 15);
+  } else if (ui.rest) stopRest(); else startRest();
+});
+// Finishing a set (leaving the reps box with a number in it) starts the rest
+document.addEventListener('change', (e) => { if (e.target.dataset.greps !== undefined && e.target.value !== '') startRest(); });
 
 // ---------- Workouts editor (Settings) ----------
 function renderWorkoutEditor() {

@@ -488,3 +488,25 @@ body.locked { overflow: hidden; }
 
 .set-in input::-webkit-outer-spin-button, .set-in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .set-in input[type="number"] { -moz-appearance: textfield; }
+
+/* ---------- Rest timer ---------- */
+.rest {
+  position: sticky; bottom: 0; z-index: 2; margin: 16px -18px 0; padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(7, 7, 7, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+}
+.rest-top { display: flex; align-items: baseline; justify-content: space-between; }
+.rest-label { font-weight: 700; color: var(--muted); }
+#rest-time { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--dim); transition: color 0.3s; }
+.rest.on #rest-time { color: var(--c); }
+.rest.on .rest-label { color: var(--text); }
+.rest-track { height: 6px; border-radius: 99px; background: var(--raise); overflow: hidden; margin: 6px 0 10px; }
+#rest-fill { height: 100%; width: 0; border-radius: 99px; background: var(--c); transition: width 0.2s linear; }
+.rest-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-btn { padding: 7px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--raise); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; transition: transform 0.2s var(--spring), border-color 0.2s, background 0.2s, color 0.2s; }
+.chip-btn:active { transform: scale(0.92); }
+.chip-btn.sel { border-color: var(--c); color: var(--c); }
+.chip-btn.go { margin-left: auto; background: var(--c); border-color: var(--c); color: #000; }
+.rest.rang { animation: rang 0.45s ease-in-out 5; }
+.rest.rang #rest-time { color: var(--mint); }
+@keyframes rang { 50% { background: color-mix(in srgb, var(--mint) 30%, #000); } }
+.finish { margin-top: 12px; }
