@@ -107,6 +107,7 @@ function normalize(s) {
     logs: s.logs && typeof s.logs === 'object' && !Array.isArray(s.logs) ? s.logs : {},
     workouts: Array.isArray(s.workouts) ? s.workouts.filter((w) => w && Array.isArray(w.exercises)) : [],
     settings: { ...base.settings, ...(s.settings || {}) },
+    metaT: Number(s.metaT) || 0,
     presetVersion: s.presetVersion ?? null
   };
 }
@@ -114,7 +115,13 @@ function normalize(s) {
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return normalize(JSON.parse(raw));
+    if (raw) {
+      const data = JSON.parse(raw);
+      const st = normalize(data);
+      // Data saved before workouts existed: start with the sample workouts so gym blocks open something
+      if (!Array.isArray(data.workouts)) st.workouts = clone(SAMPLE.workouts);
+      return st;
+    }
   } catch (e) { /* storage unavailable or corrupt */ }
   return normalize(clone(SAMPLE));
 }
@@ -124,10 +131,33 @@ for (const k of DAYS) for (const b of state.schedule[k]) if (!b.id) b.id = uid()
 const ui = { view: 'today', date: todayIso(), week: iso(mondayOf(new Date())), editDay: dayKey(new Date()) };
 
 let firstLog = null;
-function save() {
+// "Last changed" times, used by sync: every save notes which days and whether the timetable changed.
+const shadow = { logs: {}, meta: '', ready: false };
+const metaJson = () => JSON.stringify([state.categories, state.schedule, state.workouts, state.settings]);
+const logJson = (log) => { const { t, ...rest } = log; return JSON.stringify(rest); };
+function rebuildShadow() {
+  shadow.logs = Object.fromEntries(Object.entries(state.logs).map(([d, log]) => [d, logJson(log)]));
+  shadow.meta = metaJson();
+  shadow.ready = true;
+}
+function stamp() {
+  const now = Date.now();
+  for (const [d, log] of Object.entries(state.logs)) {
+    const j = logJson(log);
+    if (shadow.logs[d] !== j) { if (shadow.ready) log.t = now; shadow.logs[d] = j; }
+  }
+  const m = metaJson();
+  if (shadow.meta !== m) { if (shadow.ready) state.metaT = now; shadow.meta = m; }
+}
+function store() {
   firstLog = Object.keys(state.logs).sort()[0] || null;
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
   catch (e) { toast('Could not save (storage blocked)'); }
+}
+function save() {
+  stamp();
+  store();
+  if (typeof queueSync === 'function') queueSync();
 }
 
 const catOf = (id) => state.categories.find((c) => c.id === id);
@@ -548,6 +578,9 @@ function renderSettings() {
     <div class="row"><span>A day counts toward your streak at</span>
       <input type="number" class="field" id="threshold" min="1" max="100" value="${esc(state.settings.threshold)}" style="width:70px" />%</div>
 
+    <h3>Sync across devices</h3>
+    ${renderSyncSettings()}
+
     <h3>Data</h3>
     <p class="muted small">Data stays in this browser only. Export regularly to back it up or move it to another device.</p>
     <div class="row">
@@ -876,6 +909,142 @@ document.addEventListener('input', (e) => {
   save();
 });
 
+// ---------- Sync across devices ----------
+// Data is kept in a secret Gist on the user's own GitHub account. Each day's log and the
+// timetable carry a "last changed" time; on sync the newer side wins, day by day.
+const SYNC_KEY = 'weekgrid:sync';
+const GIST_FILE = 'weekgrid-data.json';
+let sync = (() => { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || null; } catch (e) { return null; } })();
+let syncing = false;
+let syncTimer = null;
+const syncInfo = { text: '', bad: false };
+
+function setSync(text, bad = false) {
+  syncInfo.text = text;
+  syncInfo.bad = bad;
+  const el = document.querySelector('#sync-status');
+  if (el) { el.textContent = text; el.classList.toggle('warn', bad); }
+}
+async function gh(path, opts = {}) {
+  const r = await fetch(`https://api.github.com${path}`, {
+    ...opts,
+    cache: 'no-store',
+    headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${sync.token}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) }
+  });
+  if (!r.ok) throw new Error(r.status === 401 ? 'GitHub rejected the token. Check it and connect again.' : r.status === 404 ? 'The sync file was not found on GitHub. Disconnect and connect again.' : `GitHub answered with error ${r.status}.`);
+  return r.json();
+}
+const payload = () => { const { presetVersion, ...rest } = state; return JSON.stringify(rest); };
+async function readRemote(g) {
+  const f = g.files?.[GIST_FILE];
+  if (!f) return null;
+  try { return JSON.parse(f.truncated ? await (await fetch(f.raw_url, { cache: 'no-store' })).text() : f.content); } catch (e) { return null; }
+}
+function stampAll() {
+  if (!state.metaT) state.metaT = Date.now();
+  for (const log of Object.values(state.logs)) if (!log.t) log.t = 1;
+}
+// Returns { pull, push }: whether this device took something from GitHub, and whether it has something newer to send.
+function mergeRemote(remote, first) {
+  const r = normalize(remote);
+  let pull = false, push = false;
+  const lm = state.metaT || 0, rm = remote.metaT || 0;
+  if (first || rm > lm) {
+    if (metaJson() !== JSON.stringify([r.categories, r.schedule, r.workouts, r.settings]) || lm !== rm) {
+      state.categories = r.categories; state.schedule = r.schedule; state.workouts = r.workouts; state.settings = r.settings;
+      state.metaT = rm || Date.now();
+      pull = true;
+    }
+  } else if (lm > rm) push = true;
+
+  for (const d of new Set([...Object.keys(state.logs), ...Object.keys(r.logs)])) {
+    const l = state.logs[d], x = r.logs[d];
+    if (!l) { state.logs[d] = x; pull = true; continue; }
+    if (!x) { push = true; continue; }
+    const lt = l.t || 0, xt = x.t || 0;
+    if (first && JSON.stringify({ ...l, t: 0 }) !== JSON.stringify({ ...x, t: 0 })) {
+      // Joining two devices for the first time: keep ticks, sets and notes from both
+      state.logs[d] = { ...l, ...x, marks: { ...l.marks, ...x.marks }, gym: { ...l.gym, ...x.gym }, note: x.note || l.note || '', t: Date.now() };
+      pull = true; push = true;
+    } else if (xt > lt) { state.logs[d] = x; pull = true; }
+    else if (lt > xt) push = true;
+  }
+  return { pull, push };
+}
+async function syncNow(first = false) {
+  if (!sync || syncing) return;
+  syncing = true;
+  setSync('Syncing…');
+  try {
+    const remote = await readRemote(await gh(`/gists/${sync.gistId}`));
+    stampAll();
+    const res = remote ? mergeRemote(remote, first) : { pull: false, push: true };
+    if (res.pull) {
+      rebuildShadow();
+      store();
+      const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '');
+      if (!ui.gym && !typing) render(false);
+    } else store();
+    if (res.push) await gh(`/gists/${sync.gistId}`, { method: 'PATCH', body: JSON.stringify({ files: { [GIST_FILE]: { content: payload() } } }) });
+    setSync(`Synced at ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`);
+  } catch (e) {
+    setSync(e instanceof TypeError ? 'Offline. Changes will sync when you are back online.' : e.message, !(e instanceof TypeError));
+  } finally { syncing = false; }
+}
+function queueSync(ms = 3000) {
+  if (!sync) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncNow(), ms);
+}
+async function connectSync(token) {
+  sync = { token: token.trim(), gistId: null };
+  setSync('Connecting…');
+  try {
+    const mine = await gh('/gists?per_page=100');
+    const found = mine.find((g) => g.files && g.files[GIST_FILE]);
+    stampAll();
+    if (found) sync.gistId = found.id;
+    else sync.gistId = (await gh('/gists', { method: 'POST', body: JSON.stringify({ description: 'WeekGrid data (synced between your devices)', public: false, files: { [GIST_FILE]: { content: payload() } } }) })).id;
+    localStorage.setItem(SYNC_KEY, JSON.stringify(sync));
+    render(false);
+    await syncNow(Boolean(found));
+    toast(found ? 'Connected. This device now matches your other one' : 'Connected. Now connect your other device');
+  } catch (e) {
+    sync = null;
+    render(false);
+    setSync(e instanceof TypeError ? 'Could not reach GitHub. Check your connection.' : e.message, true);
+  }
+}
+function disconnectSync() {
+  sync = null;
+  localStorage.removeItem(SYNC_KEY);
+  clearTimeout(syncTimer);
+  syncInfo.text = '';
+}
+function renderSyncSettings() {
+  if (sync?.gistId) return `
+    <p class="muted small">This device syncs with your other devices through a secret Gist on your GitHub account.</p>
+    <p id="sync-status" class="small ${syncInfo.bad ? 'warn' : ''}">${esc(syncInfo.text || 'Connected')}</p>
+    <div class="row"><button class="btn primary" data-saction="now">Sync now</button><button class="btn danger" data-saction="off">Disconnect this device</button></div>`;
+  return `
+    <p class="muted small">Keep your phone and laptop in step. Your data is stored in a secret Gist on your own GitHub account. Create a GitHub token that has only the "gist" permission, then paste the same token on every device.</p>
+    <div class="row"><input type="password" class="field" id="sync-token" placeholder="GitHub token" autocomplete="off" style="flex:1;min-width:180px" />
+    <button class="btn primary" data-saction="on">Connect</button></div>
+    <p id="sync-status" class="small ${syncInfo.bad ? 'warn' : ''}">${esc(syncInfo.text)}</p>`;
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-saction]');
+  if (!a) return;
+  if (a.dataset.saction === 'on') {
+    const v = $('#sync-token').value.trim();
+    if (!v) { setSync('Paste your GitHub token first.', true); return; }
+    connectSync(v);
+  } else if (a.dataset.saction === 'now') syncNow();
+  else if (a.dataset.saction === 'off') { if (confirm('Stop syncing on this device? Your data stays here and on GitHub.')) { disconnectSync(); render(false); } }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSync(300); });
+window.addEventListener('online', () => queueSync(300));
+
 // ---------- Rendering / navigation ----------
 const RENDER = { today: renderToday, week: renderWeek, timetable: renderTimetable, settings: renderSettings };
 
@@ -988,6 +1157,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'reset':
       if (!confirm('Delete all data? Export first if you want a backup.')) return;
+      disconnectSync(); // otherwise the cleared data would come straight back from GitHub
       state = { ...emptyState(), presetVersion: state.presetVersion };
       save();
       toast('Everything cleared');
@@ -1042,7 +1212,9 @@ $('#import-file').addEventListener('change', async (e) => {
     if (!data.schedule || !Array.isArray(data.categories)) throw new Error('bad file');
     const kept = state.logs;
     const pv = state.presetVersion;
+    const keptWorkouts = state.workouts;
     state = normalize(data);
+    if (!Array.isArray(data.workouts)) state.workouts = keptWorkouts; // older files have no workouts
     state.presetVersion = pv;
     if (!Object.keys(state.logs).length) state.logs = kept; // a timetable-only file keeps your history
     save();
@@ -1076,6 +1248,7 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('resize', moveInk);
 document.fonts?.ready.then(moveInk);
 
+rebuildShadow();
 save(); // sets firstLog
 freezePast();
 applyPreset();

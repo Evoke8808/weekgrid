@@ -18,6 +18,7 @@ No backend, no account, no build step. Open `index.html` and go.
 - **Catch-up nudge** — if yesterday has unmarked blocks (like "sleep on time"), Today offers a one-tap way back.
 - **Motion** — a welcome sequence, a seven-column page wipe between tabs, and feedback on every mark. Respects reduced-motion.
 - **Workout log** — tap a gym block to open its workout: log kg and reps per set against a fixed target, add extra sets on the spot, and see last session's numbers with a suggested weight for today.
+- **Sync across devices** — optional. Paste a GitHub token with only the `gist` permission in Settings on each device and your data is kept in a secret Gist on your own account. Changes merge day by day, newest wins.
 - **Keyboard** — ← and → step through days and weeks.
 - **Private** — data lives in your browser's `localStorage`. Export/import JSON to back up or switch devices.
 - **Mobile-friendly** — works on phone and laptop.
@@ -90,7 +91,6 @@ examples/    sample timetable to import
 
 - [ ] Reminders when a block starts
 - [ ] Light theme
-- [ ] Optional cloud sync
 
 ## Contributing
 
