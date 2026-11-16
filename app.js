@@ -59,6 +59,7 @@ const SAMPLE = {
     ]
   },
   logs: {},
+  cardio: { daily: false, machines: [{ id: 'treadmill', name: 'Treadmill', mode: 'up' }, { id: 'cross', name: 'Cross trainer', mode: 'up' }, { id: 'cycle', name: 'Cycle', mode: 'down' }], plan: {} },
   workouts: [
     { id: 'push', name: 'Push', exercises: [
       { name: 'Bench press', sets: 4, reps: '6-8' }, { name: 'Shoulder press', sets: 3, reps: '8-10' },
@@ -95,7 +96,7 @@ const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: 'long', day: '
 
 // ---------- State ----------
 function emptyState() {
-  return { categories: [], schedule: Object.fromEntries(DAYS.map((k) => [k, []])), logs: {}, settings: { threshold: 70, rest: 90 } };
+  return { categories: [], schedule: Object.fromEntries(DAYS.map((k) => [k, []])), logs: {}, workouts: [], cardio: { daily: false, machines: [], plan: {} }, settings: { threshold: 70, rest: 90 } };
 }
 
 function normalize(s) {
@@ -114,6 +115,7 @@ function normalize(s) {
     schedule: Object.fromEntries(DAYS.map((k) => [k, Array.isArray(s.schedule?.[k]) ? s.schedule[k].filter((b) => b && typeof b === 'object') : []])),
     logs,
     workouts: Array.isArray(s.workouts) ? s.workouts.filter((w) => w && Array.isArray(w.exercises)) : [],
+    cardio: normCardio(s.cardio),
     settings: { ...base.settings, ...(s.settings || {}) },
     metaT: Number(s.metaT) || 0,
     presetVersion: s.presetVersion ?? null
@@ -128,6 +130,7 @@ function load() {
       const st = normalize(data);
       // Data saved before workouts existed: start with the sample workouts so gym blocks open something
       if (!Array.isArray(data.workouts)) st.workouts = clone(SAMPLE.workouts);
+      if (!data.cardio) st.cardio = clone(SAMPLE.cardio);
       return st;
     }
   } catch (e) { /* storage unavailable or corrupt */ }
@@ -140,7 +143,7 @@ const ui = { view: 'today', date: todayIso(), week: iso(mondayOf(new Date())), e
 let firstLog = null;
 // "Last changed" times, used by sync: every save notes which days and whether the timetable changed.
 const shadow = { logs: {}, meta: '', ready: false };
-const metaJson = () => JSON.stringify([state.categories, state.schedule, state.workouts, state.settings]);
+const metaJson = () => JSON.stringify([state.categories, state.schedule, state.workouts, state.settings, state.cardio]);
 const logJson = (log) => { const { t, ...rest } = log; return JSON.stringify(rest); };
 function rebuildShadow() {
   shadow.logs = Object.fromEntries(Object.entries(state.logs).map(([d, log]) => [d, logJson(log)]));
@@ -191,7 +194,7 @@ function freezePast() {
     const log = state.logs[k] || (state.logs[k] = { marks: {}, note: '' });
     if (!log.marks) log.marks = {};
     if (typeof log.note !== 'string') log.note = '';
-    if (!log.blocks) { log.blocks = snapshot(dayKey(d)); changed = true; }
+    if (!log.blocks) { log.blocks = snapshot(dayKey(d)); log.cardioReq = Boolean(state.cardio.daily && state.cardio.machines.length); changed = true; }
   }
   if (changed) save();
 }
@@ -201,9 +204,10 @@ function freezePast() {
 function applyPreset() {
   const p = window.WEEKGRID_PRESET;
   if (!p || !p.schedule || !Array.isArray(p.categories) || state.presetVersion === p.version) return;
-  const fresh = normalize({ categories: clone(p.categories), schedule: clone(p.schedule), workouts: clone(p.workouts || state.workouts) });
+  const fresh = normalize({ categories: clone(p.categories), schedule: clone(p.schedule), workouts: clone(p.workouts || state.workouts), cardio: clone(p.cardio || state.cardio) });
   state.categories = fresh.categories;
   state.workouts = fresh.workouts;
+  state.cardio = fresh.cardio;
   state.schedule = fresh.schedule;
   state.presetVersion = p.version;
   save();
@@ -232,15 +236,21 @@ function dayStats(dIso) {
     byCat[b.cat].planned += hours(b);
     byCat[b.cat].done += hours(b) * s;
   }
-  const pct = blocks.length ? Math.round((score / blocks.length) * 100) : null;
+  const log = logFor(dIso);
+  const cardio = cardioReq(dIso);
+  const cs = log.cardio?.status;
+  let count = blocks.length, marked = blocks.filter((b) => marks[b.id]).length;
+  if (cardio) { count++; score += SCORE[cs] ?? 0; if (cs) marked++; }
+  const pct = count ? Math.round((score / count) * 100) : null;
   // "So far" score: today, blocks that have not ended yet are not held against you.
   let soFar = pct;
   if (dIso === todayIso()) {
     const t = nowMin();
     const due = blocks.filter((b) => marks[b.id] || (toMin(b.end) >= toMin(b.start) && toMin(b.end) <= t));
-    soFar = due.length ? Math.round((due.reduce((a, b) => a + (SCORE[marks[b.id]] ?? 0), 0) / due.length) * 100) : null;
+    const n = due.length + (cardio && cs ? 1 : 0);
+    soFar = n ? Math.round(((due.reduce((a, b) => a + (SCORE[marks[b.id]] ?? 0), 0) + (cardio && cs ? SCORE[cs] : 0)) / n) * 100) : null;
   }
-  return { pct, soFar, byCat, count: blocks.length, marked: blocks.filter((b) => marks[b.id]).length };
+  return { pct, soFar, byCat, count, marked, cardio };
 }
 
 function streak() {
@@ -361,7 +371,11 @@ function renderToday() {
   const n = streak();
 
   const segs = blocks.filter(isTracked).map((b, i) =>
-    `<i class="seg s-${log.marks[b.id] || 'none'}" data-seg="${b.id}" style="--c:${tone(catOf(b.cat)?.color)};--i:${i};flex:${hours(b) || 1}"></i>`).join('');
+    `<i class="seg s-${log.marks[b.id] || 'none'}" data-seg="${b.id}" style="--c:${tone(catOf(b.cat)?.color)};--i:${i};flex:${hours(b) || 1}"></i>`).join('')
+    + (st.cardio ? `<i class="seg s-${log.cardio?.status || 'none'}" style="--c:${CARDIO_COLOR};--i:${blocks.length};flex:0.4"></i>` : '');
+  const extraN = (log.extra || []).length;
+  const extras = `<div class="extras">${cardioCard(ui.date)}
+    <button class="extra-card" data-action="open-gym" data-id="free" style="--c:${DAY_COLORS[key]}"><span class="xc-title">${extraN ? 'Extra workout' : '+ Extra workout'}</span><span class="xc-sub">${extraN ? `${extraN} ${extraN === 1 ? 'exercise' : 'exercises'} added` : 'Add any exercise by name'}</span></button></div>`;
 
   const mon = mondayOf(d);
   const strip = DAYS.map((k, i) => {
@@ -425,6 +439,7 @@ function renderToday() {
     </div>
     ${nudge}
     <div class="blocks">${rows || `<div class="empty-state">No blocks on ${DAY_NAMES[key]} yet. Add some in Timetable.</div>`}</div>
+    ${extras}
     <h3>What slipped, and why?</h3>
     <textarea id="day-note" placeholder="One honest line is enough.">${esc(log.note)}</textarea>`;
 
@@ -576,6 +591,9 @@ function renderSettings() {
     ${cats || '<div class="muted">No categories.</div>'}
     <button class="btn primary" data-action="add-cat" style="margin-top:6px">+ Add category</button>
 
+    <h3>Cardio</h3>
+    ${renderCardioSettings()}
+
     <h3>Workouts</h3>
     <p class="muted small">A gym block opens the workout whose name appears in its title, like "Gym: Push A". Targets stay fixed while you log what you actually did.</p>
     ${renderWorkoutEditor()}
@@ -711,10 +729,12 @@ function exStatus(dIso, ex) {
 
 function renderSheet() {
   const el = $('#sheet');
-  const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
-  const w = b && workoutFor(b);
-  if (!b || !w) { el.classList.remove('open'); return; }
-  const c = tone(catOf(b.cat)?.color);
+  if (ui.gym === 'cardio') { renderCardioSheet(); return; }
+  const ctx = sheetCtx();
+  if (!ctx) { el.classList.remove('open'); return; }
+  const b = ctx.b;
+  const w = ctx;
+  const c = b ? tone(catOf(b.cat)?.color) : DAY_COLORS[dayKey(fromIso(ui.date))];
   const total = w.exercises.reduce((a, ex) => a + (Number(ex.sets) || 1), 0);
   const done = w.exercises.reduce((a, ex) => a + Math.min(exStatus(ui.date, ex).done, Number(ex.sets) || 1), 0);
 
@@ -751,11 +771,13 @@ function renderSheet() {
           ${tip ? `<div class="tip">${esc(tip)}</div>` : ''}
           <div class="sets">${setRows}</div>
           <button class="btn add-set" data-gaction="add-set">+ Add a set</button>
+          ${ex.extra ? '<button class="btn danger del-ex" data-gaction="del-ex">Remove this exercise</button>' : ''}
         </div></div>
       </div>`;
   }).join('');
 
-  const isDone = logFor(ui.date).marks?.[b.id] === 'done';
+  const isDone = b && logFor(ui.date).marks?.[b.id] === 'done';
+  const known = [...new Set([...(state.workouts || []).flatMap((x) => x.exercises.map((y) => y.name)), ...Object.values(state.logs).flatMap((l) => (l.extra || []).map((y) => y.name))])].filter(Boolean).sort();
   el.innerHTML = `
     <div class="sheet-back" data-gaction="close"></div>
     <div class="sheet-card" role="dialog" aria-modal="true" aria-label="${esc(w.name)}" style="--c:${c}">
@@ -767,14 +789,32 @@ function renderSheet() {
       </div>
       <div class="sheet-prog"><span id="gym-done">${done}</span> of ${total} sets logged
         <div class="cat-track"><div class="cat-fill" id="gym-fill" style="--w:${total ? Math.round((done / total) * 100) : 0}%;--c:${c}"></div></div></div>
-      <div class="exs">${rows || '<div class="empty-state">This workout has no exercises yet. Add some in Settings.</div>'}</div>
+      <div class="exs">${rows || '<div class="empty-state">Nothing here yet. Add your first exercise below.</div>'}</div>
+      <div class="add-ex">
+        <div class="c-label">Add an exercise for today</div>
+        <div class="add-ex-row">
+          <input class="field" id="new-ex" list="ex-names" placeholder="Name, like Dips" autocomplete="off" aria-label="Exercise name" />
+          <input class="field" id="new-sets" type="number" inputmode="numeric" min="1" value="3" aria-label="Sets" />
+          <input class="field" id="new-reps" value="10" aria-label="Target reps" />
+          <button class="btn" data-gaction="add-ex">Add</button>
+        </div>
+        <div class="muted small">Sets, then target reps. Only added to this day.</div>
+        <datalist id="ex-names">${known.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+      </div>
       ${restBar()}
-      <button class="btn primary finish" data-gaction="finish" ${isDone ? 'disabled' : ''}>${isDone ? 'Gym marked done' : 'Mark gym done'}</button>
+      ${b ? `<button class="btn primary finish" data-gaction="finish" ${isDone ? 'disabled' : ''}>${isDone ? 'Gym marked done' : 'Mark gym done'}</button>` : '<button class="btn primary finish" data-gaction="close">Done</button>'}
     </div>`;
   el.classList.add('open');
   paintRest();
 }
 
+function sheetCtx() {
+  const b = ui.gym === 'free' ? null : blocksOn(ui.date).find((x) => x.id === ui.gym);
+  const w = b ? workoutFor(b) : null;
+  if (ui.gym !== 'free' && !w) return null;
+  const extra = (logFor(ui.date).extra || []).map((x) => ({ ...x, extra: true }));
+  return { b, name: w ? w.name : 'Extra workout', exercises: [...(w ? w.exercises : []), ...extra] };
+}
 function openGym(id) {
   ui.gym = id;
   ui.openEx = null;
@@ -785,6 +825,7 @@ function openGym(id) {
 function closeGym(fromBack = false) {
   if (!ui.gym || ui.closing) return;
   ui.closing = true;
+  if (ui.gym === 'cardio' && ui.cardio && cardioElapsed() === 0) ui.cardio = null; // nothing started: forget the choices
   if (!fromBack && history.state?.gym) { try { history.back(); } catch (e) { /* ignore */ } }
   stopRest();
   const el = $('#sheet');
@@ -801,8 +842,7 @@ function gymWrite(key, j, field, value) {
   save();
 }
 function refreshGymProgress() {
-  const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
-  const w = b && workoutFor(b);
+  const w = sheetCtx();
   if (!w) return;
   let done = 0, total = 0;
   for (const ex of w.exercises) {
@@ -827,10 +867,27 @@ document.addEventListener('click', (e) => {
     case 'close': closeGym(); return;
     case 'toggle-ex': ui.openEx = ui.openEx === g.dataset.ex ? null : g.dataset.ex; break;
     case 'add-set': {
-      const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
-      const ex = workoutFor(b).exercises.find((x) => exKey(x.name) === key);
+      const ex = sheetCtx().exercises.find((x) => exKey(x.name) === key);
       const sets = setsFor(ui.date, key, Number(ex.sets) || 1);
       gymWrite(key, sets.length, 'reps', '');
+      break;
+    }
+    case 'add-ex': {
+      const name = $('#new-ex').value.trim();
+      if (!name) { toast('Type the exercise name first'); $('#new-ex').focus(); return; }
+      if (sheetCtx().exercises.some((x) => exKey(x.name) === exKey(name))) { toast('That exercise is already in this workout'); return; }
+      const log = state.logs[ui.date] || (state.logs[ui.date] = { marks: {}, note: '' });
+      (log.extra = log.extra || []).push({ name, sets: Math.max(1, Number($('#new-sets').value) || 3), reps: $('#new-reps').value.trim() || '10' });
+      save();
+      ui.openEx = exKey(name);
+      break;
+    }
+    case 'del-ex': {
+      const log = state.logs[ui.date];
+      if (!log || !confirm('Remove this exercise and its logged sets from today?')) return;
+      log.extra = (log.extra || []).filter((x) => exKey(x.name) !== key);
+      if (log.gym) delete log.gym[key];
+      save();
       break;
     }
     case 'del-set': {
@@ -869,8 +926,7 @@ document.addEventListener('input', (e) => {
     const next = row.nextElementSibling?.querySelector('[data-gkg]');
     if (t.dataset.gkg !== undefined && next && next.value === '') next.placeholder = t.value || next.placeholder;
     const s = setsFor(ui.date, key, 0)[j] || {};
-    const b = blocksOn(ui.date).find((x) => x.id === ui.gym);
-    const ex = workoutFor(b)?.exercises.find((x) => exKey(x.name) === key);
+    const ex = sheetCtx()?.exercises.find((x) => exKey(x.name) === key);
     const target = parseReps(ex?.reps).target;
     row.classList.toggle('logged', filled(s));
     row.classList.toggle('hit', filled(s) && target && Number(s.reps) >= target);
@@ -975,6 +1031,220 @@ document.addEventListener('click', (e) => {
 // Finishing a set (leaving the reps box with a number in it) starts the rest
 document.addEventListener('change', (e) => { if (e.target.dataset.greps !== undefined && e.target.value !== '') startRest(); });
 
+// ---------- Cardio ----------
+// A daily cardio session with a timer. Machines marked "down" count down from the chosen time
+// (cycle); "up" machines run as a stopwatch toward a goal (treadmill, cross trainer).
+const CARDIO_COLOR = '#8fc4d6';
+function normCardio(c) {
+  if (!c || typeof c !== 'object') return { daily: false, machines: [], plan: {} };
+  return {
+    daily: Boolean(c.daily),
+    machines: Array.isArray(c.machines) ? c.machines.filter((m) => m && m.id && typeof m.name === 'string').map((m) => ({ id: String(m.id), name: m.name, mode: m.mode === 'down' ? 'down' : 'up' })) : [],
+    plan: c.plan && typeof c.plan === 'object' ? c.plan : {}
+  };
+}
+const machineOf = (id) => state.cardio.machines.find((m) => m.id === id);
+const cardioPlan = (dIso) => state.cardio.plan[dayKey(fromIso(dIso))] || null;
+const cardioReq = (dIso) => (dIso < todayIso() ? Boolean(state.logs[dIso]?.cardioReq) : Boolean(state.cardio.daily && state.cardio.machines.length));
+const cardioElapsed = () => (ui.cardio ? ui.cardio.acc + (ui.cardio.running ? (Date.now() - ui.cardio.startedAt) / 1000 : 0) : 0);
+let cardioTick = null;
+let cBeeps = [];
+function makeBeeps(secs) {
+  const out = [];
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    [0, 0.28, 0.56].forEach((off, i) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      const at = audio.currentTime + Math.max(0, secs) + off;
+      o.frequency.value = i === 2 ? 1175 : 880;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.35, at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+      o.connect(g).connect(audio.destination);
+      o.start(at); o.stop(at + 0.25);
+      out.push(o);
+    });
+  } catch (e) { /* no sound available */ }
+  return out;
+}
+const stopCBeeps = () => { for (const o of cBeeps) { try { o.stop(); } catch (e) { /* done */ } } cBeeps = []; };
+
+function cardioSession() {
+  if (ui.cardio && ui.cardio.date === ui.date) return ui.cardio;
+  if (ui.cardio && cardioElapsed() > 0) return ui.cardio; // a running session from another day stays until saved or reset
+  const saved = logFor(ui.date).cardio;
+  const plan = cardioPlan(ui.date);
+  const m = machineOf(saved?.machine) || machineOf(plan?.machine) || state.cardio.machines[0];
+  ui.cardio = { date: ui.date, machine: m?.id, goal: Math.max(60, Math.round((Number(plan?.min) || 10) * 60)), custom: false, running: false, startedAt: 0, acc: 0, rang: false };
+  return ui.cardio;
+}
+function cardioStatus(secs, goal) { return secs >= goal - 1 ? 'done' : secs >= goal / 2 ? 'partial' : 'missed'; }
+function saveCardio(secs) {
+  const s = ui.cardio;
+  const m = machineOf(s.machine);
+  const prev = dayStats(s.date).pct || 0;
+  const log = state.logs[s.date] || (state.logs[s.date] = { marks: {}, note: '' });
+  log.cardio = { machine: s.machine, name: m?.name || 'Cardio', mode: m?.mode || 'up', goal: s.goal, secs: Math.round(secs), status: cardioStatus(secs, s.goal) };
+  clearInterval(cardioTick);
+  stopCBeeps();
+  ui.cardio = null;
+  save();
+  const full = log.cardio.status === 'done';
+  toast(full ? `Cardio done: ${log.cardio.name} ${mmss(log.cardio.secs)}` : `Saved ${mmss(log.cardio.secs)} of ${mmss(log.cardio.goal)}`);
+  if (ui.gym === 'cardio') closeGym();
+  if (full && dayStats(s.date).pct === 100 && prev < 100) confetti();
+}
+function paintCardio() {
+  const s = ui.cardio;
+  if (!s) return;
+  const m = machineOf(s.machine);
+  const el = cardioElapsed();
+  if (!s.rang && el >= s.goal) {
+    s.rang = true;
+    navigator.vibrate?.([300, 120, 300, 120, 300]);
+    if (m?.mode === 'down') { saveCardio(s.goal); return; } // a countdown ends itself
+  }
+  const t = document.querySelector('#c-time');
+  if (!t) return;
+  t.textContent = m?.mode === 'down' ? mmss(Math.ceil(Math.max(0, s.goal - el))) : mmss(Math.floor(el));
+  t.classList.toggle('past', el >= s.goal);
+  document.querySelector('#c-fill').style.width = `${Math.min(100, (el / s.goal) * 100)}%`;
+}
+function renderCardioSheet() {
+  const el = $('#sheet');
+  const s = cardioSession();
+  const m = machineOf(s.machine);
+  const rec = cardioPlan(s.date);
+  const saved = logFor(s.date).cardio;
+  const elapsed = cardioElapsed();
+  const started = elapsed > 0;
+  const mins = s.goal / 60;
+  if (!state.cardio.machines.length) {
+    el.innerHTML = `<div class="sheet-back" data-gaction="close"></div><div class="sheet-card" style="--c:${CARDIO_COLOR}"><div class="grab" data-gaction="close"></div><div class="sheet-title">Cardio</div><div class="empty-state" style="margin-top:14px">No cardio machines yet. Add yours in Settings.</div></div>`;
+    el.classList.add('open');
+    return;
+  }
+  el.innerHTML = `
+    <div class="sheet-back" data-gaction="close"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Cardio" style="--c:${CARDIO_COLOR}">
+      <div class="grab" data-gaction="close"></div>
+      <div class="sheet-top">
+        <div><div class="sheet-title">Cardio</div><div class="muted small">${esc(fmtDate(fromIso(s.date)))}</div></div>
+        <button class="nav-btn" data-gaction="close" aria-label="Close">✕</button>
+      </div>
+      ${saved ? `<div class="c-saved">Saved today: ${esc(saved.name)}, ${mmss(saved.secs)} of ${mmss(saved.goal)}${saved.status === 'done' ? ' ✓' : ''}. Saving again replaces it.</div>` : ''}
+      <div class="c-label">Machine</div>
+      <div class="machs">${state.cardio.machines.map((x) => `
+        <button class="mach ${x.id === s.machine ? 'sel' : ''}" data-caction="machine" data-id="${esc(x.id)}" ${started ? 'disabled' : ''}>
+          <span class="mach-name">${esc(x.name)}${rec?.machine === x.id ? ' <em>(recommended for you)</em>' : ''}</span>
+          <span class="mach-mode">${x.mode === 'down' ? 'counts down' : 'counts up'}</span>
+        </button>`).join('')}</div>
+      <div class="c-label">Time</div>
+      <div class="rest-row">
+        ${[10, 15].map((n) => `<button class="chip-btn ${!s.custom && mins === n ? 'sel' : ''}" data-caction="len" data-m="${n}" ${started ? 'disabled' : ''}>${n} min</button>`).join('')}
+        <button class="chip-btn ${s.custom || ![10, 15].includes(mins) ? 'sel' : ''}" data-caction="custom" ${started ? 'disabled' : ''}>Custom</button>
+        ${s.custom || ![10, 15].includes(mins) ? `<label class="set-in c-custom"><input type="number" inputmode="numeric" min="1" max="180" id="c-custom" value="${+mins.toFixed(1)}" ${started ? 'disabled' : ''} aria-label="Minutes" /><span>min</span></label>` : ''}
+      </div>
+      <div class="c-clock">
+        <div class="c-time" id="c-time">${m?.mode === 'down' ? mmss(Math.ceil(Math.max(0, s.goal - elapsed))) : mmss(Math.floor(elapsed))}</div>
+        <div class="muted small">${m?.mode === 'down' ? `Counting down from ${mmss(s.goal)}` : `Stopwatch, goal ${mmss(s.goal)}`}</div>
+        <div class="rest-track"><div id="c-fill" style="width:${Math.min(100, (elapsed / s.goal) * 100)}%"></div></div>
+      </div>
+      <div class="c-actions">
+        <button class="btn primary" data-caction="toggle">${s.running ? 'Pause' : started ? 'Resume' : 'Start'}</button>
+        ${started ? '<button class="btn" data-caction="save">Finish and save</button><button class="btn danger" data-caction="reset">Reset</button>' : '<button class="btn" data-caction="skip">I did it without the timer</button>'}
+      </div>
+    </div>`;
+  el.classList.add('open');
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-caction]');
+  if (!a || !ui.cardio) return;
+  const s = ui.cardio;
+  switch (a.dataset.caction) {
+    case 'machine': s.machine = a.dataset.id; break;
+    case 'len': s.goal = Number(a.dataset.m) * 60; s.custom = false; break;
+    case 'custom': s.custom = true; break;
+    case 'toggle':
+      if (s.running) { s.acc = cardioElapsed(); s.running = false; clearInterval(cardioTick); stopCBeeps(); }
+      else {
+        s.running = true; s.startedAt = Date.now();
+        stopCBeeps();
+        if (s.goal - s.acc > 0) cBeeps = makeBeeps(s.goal - s.acc);
+        clearInterval(cardioTick);
+        cardioTick = setInterval(paintCardio, 250);
+      }
+      break;
+    case 'save': saveCardio(cardioElapsed()); return;
+    case 'skip': saveCardio(s.goal); return;
+    case 'reset':
+      if (!confirm('Reset the timer? The time so far is not saved.')) return;
+      clearInterval(cardioTick); stopCBeeps(); ui.cardio = null;
+      break;
+    default: return;
+  }
+  renderCardioSheet();
+  if (a.dataset.caction === 'custom') { const i = $('#c-custom'); i?.focus(); i?.select(); }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'c-custom' || !ui.cardio) return;
+  const v = Math.min(180, Math.max(0, Number(e.target.value) || 0));
+  if (v > 0) { ui.cardio.goal = Math.round(v * 60); ui.cardio.custom = true; paintCardio(); document.querySelector('.c-clock .muted').textContent = `${machineOf(ui.cardio.machine)?.mode === 'down' ? 'Counting down from' : 'Stopwatch, goal'} ${mmss(ui.cardio.goal)}`; }
+});
+
+function cardioCard(dIso) {
+  if (!state.cardio.machines.length) return '';
+  const saved = logFor(dIso).cardio;
+  const plan = cardioPlan(dIso);
+  const live = ui.cardio && cardioElapsed() > 0 && ui.cardio.date === dIso;
+  const sub = live ? 'Timer in progress' : saved ? `${saved.name}, ${mmss(saved.secs)}${saved.status === 'done' ? ' done' : ` of ${mmss(saved.goal)}`}` : plan && machineOf(plan.machine) ? `${machineOf(plan.machine).name}, ${plan.min || 10} min` : 'Pick a machine and a time';
+  return `<button class="extra-card st-${saved?.status || 'none'}" data-action="open-gym" data-id="cardio" style="--c:${CARDIO_COLOR}">
+    <span class="xc-title">Cardio${saved?.status === 'done' ? ' ✓' : ''}</span><span class="xc-sub">${esc(sub)}</span></button>`;
+}
+function renderCardioSettings() {
+  const c = state.cardio;
+  return `
+    <label class="row small" style="margin-bottom:10px"><input type="checkbox" data-kfield="daily" ${c.daily ? 'checked' : ''} /> Cardio every day counts toward my daily score</label>
+    ${c.machines.map((m, i) => `
+      <div class="edit-row k-mach" data-k="${i}">
+        <input type="text" value="${esc(m.name)}" data-kfield="name" aria-label="Machine name" />
+        <select data-kfield="mode" aria-label="Timer type"><option value="up" ${m.mode === 'up' ? 'selected' : ''}>Counts up</option><option value="down" ${m.mode === 'down' ? 'selected' : ''}>Counts down</option></select>
+        <button class="btn danger icon" data-kaction="del" aria-label="Delete machine">✕</button>
+      </div>`).join('')}
+    <button class="btn" data-kaction="add">+ Add machine</button>
+    <p class="muted small" style="margin:14px 0 8px">Recommended machine for each day. It is shown as "recommended for you" when you start cardio.</p>
+    ${DAYS.map((k) => `
+      <div class="edit-row k-plan" data-day="${k}">
+        <strong style="color:${DAY_COLORS[k]};align-self:center">${DAY_NAMES[k].slice(0, 3)}</strong>
+        <select data-kfield="pm" aria-label="${DAY_NAMES[k]} machine"><option value="">None</option>${c.machines.map((m) => `<option value="${esc(m.id)}" ${c.plan[k]?.machine === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
+        <label class="row small muted"><input type="number" min="1" max="180" class="field" style="width:64px" data-kfield="pmin" value="${esc(c.plan[k]?.min ?? 10)}" aria-label="${DAY_NAMES[k]} minutes" />min</label>
+      </div>`).join('')}`;
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-kaction]');
+  if (!a) return;
+  if (a.dataset.kaction === 'add') state.cardio.machines.push({ id: uid(), name: 'New machine', mode: 'up' });
+  else { const i = Number(a.closest('[data-k]').dataset.k); const gone = state.cardio.machines.splice(i, 1)[0]; for (const k of DAYS) if (state.cardio.plan[k]?.machine === gone.id) delete state.cardio.plan[k]; }
+  save();
+  render(false);
+});
+function cardioSettingInput(e) {
+  const t = e.target;
+  const f = t.dataset.kfield;
+  if (!f) return;
+  const c = state.cardio;
+  if (f === 'daily') c.daily = t.checked;
+  else if (f === 'name' || f === 'mode') { const m = c.machines[Number(t.closest('[data-k]').dataset.k)]; if (m) m[f] = t.value; }
+  else {
+    const k = t.closest('[data-day]').dataset.day;
+    if (f === 'pm') { if (t.value) c.plan[k] = { machine: t.value, min: Number(c.plan[k]?.min) || 10 }; else delete c.plan[k]; }
+    else if (c.plan[k]) c.plan[k].min = Math.min(180, Math.max(1, Number(t.value) || 10));
+  }
+  save();
+}
+document.addEventListener('input', cardioSettingInput);
+
 // ---------- Workouts editor (Settings) ----------
 function renderWorkoutEditor() {
   const ws = state.workouts || [];
@@ -1061,8 +1331,9 @@ function mergeRemote(remote, first) {
   let pull = false, push = false;
   const lm = state.metaT || 0, rm = remote.metaT || 0;
   if (first || rm > lm) {
-    if (metaJson() !== JSON.stringify([r.categories, r.schedule, r.workouts, r.settings]) || lm !== rm) {
+    if (metaJson() !== JSON.stringify([r.categories, r.schedule, r.workouts, r.settings, r.cardio]) || lm !== rm) {
       state.categories = r.categories; state.schedule = r.schedule; state.workouts = r.workouts; state.settings = r.settings;
+      if (remote.cardio) state.cardio = r.cardio; // a device on an older version has no cardio to offer
       state.metaT = rm || Date.now();
       pull = true;
     }
@@ -1264,6 +1535,7 @@ document.addEventListener('click', (e) => {
       state.categories = clone(SAMPLE.categories);
       state.schedule = clone(SAMPLE.schedule);
       state.workouts = clone(SAMPLE.workouts);
+      state.cardio = clone(SAMPLE.cardio);
       save();
       toast('Sample week loaded');
       break;
@@ -1327,8 +1599,10 @@ $('#import-file').addEventListener('change', async (e) => {
     const kept = state.logs;
     const pv = state.presetVersion;
     const keptWorkouts = state.workouts;
+    const keptCardio = state.cardio;
     state = normalize(data);
     if (!Array.isArray(data.workouts)) state.workouts = keptWorkouts; // older files have no workouts
+    if (!data.cardio) state.cardio = keptCardio;
     state.presetVersion = pv;
     if (!Object.keys(state.logs).length) state.logs = kept; // a timetable-only file keeps your history
     save();

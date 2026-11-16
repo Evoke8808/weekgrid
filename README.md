@@ -19,6 +19,8 @@ No backend, no account, no build step. Open `index.html` and go.
 - **Motion** — a welcome sequence, a seven-column page wipe between tabs, and feedback on every mark. Respects reduced-motion.
 - **Workout log** — tap a gym block to open its workout: log kg and reps per set against a fixed target, add extra sets on the spot, see last session's numbers with a suggested weight for today, and rest between sets with a 1:00, 1:30 or 2:00 timer that starts by itself.
 - **Sync across devices** — optional. Paste a GitHub token with only the `gist` permission in Settings on each device and your data is kept in a secret Gist on your own account. Changes merge day by day, newest wins.
+- **Cardio** — a daily cardio card with a timer: a countdown for machines like the cycle, a stopwatch toward a goal for the treadmill or cross trainer. 10 min, 15 min or custom. Set a recommended machine per day in Settings; it can count toward the daily score.
+- **Extra workout** — add any exercise by name to any day, including rest days, and log it like the rest.
 - **Keyboard** — ← and → step through days and weeks.
 - **Private** — data lives in your browser's `localStorage`. Export/import JSON to back up or switch devices.
 - **Mobile-friendly** — works on phone and laptop.
