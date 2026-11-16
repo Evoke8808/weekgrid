@@ -101,10 +101,18 @@ function emptyState() {
 function normalize(s) {
   const base = emptyState();
   if (!s || typeof s !== 'object') return base;
+  const logs = {};
+  if (s.logs && typeof s.logs === 'object' && !Array.isArray(s.logs)) {
+    for (const [d, log] of Object.entries(s.logs)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !log || typeof log !== 'object') continue; // skip anything that is not a day's log
+      logs[d] = { ...log, marks: log.marks && typeof log.marks === 'object' ? log.marks : {}, note: typeof log.note === 'string' ? log.note : '' };
+    }
+  }
+  for (const k of DAYS) for (const b of (Array.isArray(s.schedule?.[k]) ? s.schedule[k] : [])) if (b && !b.id) b.id = uid();
   return {
     categories: Array.isArray(s.categories) ? s.categories : [],
-    schedule: Object.fromEntries(DAYS.map((k) => [k, Array.isArray(s.schedule?.[k]) ? s.schedule[k] : []])),
-    logs: s.logs && typeof s.logs === 'object' && !Array.isArray(s.logs) ? s.logs : {},
+    schedule: Object.fromEntries(DAYS.map((k) => [k, Array.isArray(s.schedule?.[k]) ? s.schedule[k].filter((b) => b && typeof b === 'object') : []])),
+    logs,
     workouts: Array.isArray(s.workouts) ? s.workouts.filter((w) => w && Array.isArray(w.exercises)) : [],
     settings: { ...base.settings, ...(s.settings || {}) },
     metaT: Number(s.metaT) || 0,
@@ -127,7 +135,6 @@ function load() {
 }
 
 let state = load();
-for (const k of DAYS) for (const b of state.schedule[k]) if (!b.id) b.id = uid();
 const ui = { view: 'today', date: todayIso(), week: iso(mondayOf(new Date())), editDay: dayKey(new Date()) };
 
 let firstLog = null;
@@ -263,7 +270,7 @@ function weekStats(mondayIso) {
   }
   const scored = days.filter((d) => d.soFar !== null && counts(d.dIso));
   const avg = scored.length ? Math.round(scored.reduce((a, d) => a + d.soFar, 0) / scored.length) : 0;
-  const best = scored.reduce((b, d) => (!b || d.soFar > b.soFar ? d : b), null);
+  const best = scored.reduce((b, d) => (d.soFar > 0 && (!b || d.soFar > b.soFar) ? d : b), null);
   return { days, byCat, avg, best };
 }
 
@@ -773,13 +780,17 @@ function openGym(id) {
   ui.openEx = null;
   renderSheet();
   document.body.classList.add('locked');
+  try { history.pushState({ gym: true }, ''); } catch (e) { /* some browsers refuse on file:// */ }
 }
-function closeGym() {
+function closeGym(fromBack = false) {
+  if (!ui.gym || ui.closing) return;
+  ui.closing = true;
+  if (!fromBack && history.state?.gym) { try { history.back(); } catch (e) { /* ignore */ } }
   stopRest();
   const el = $('#sheet');
   el.classList.add('closing');
   document.body.classList.remove('locked');
-  setTimeout(() => { el.classList.remove('open', 'closing'); el.innerHTML = ''; ui.gym = null; render(false); }, reduced() ? 0 : 280);
+  setTimeout(() => { el.classList.remove('open', 'closing'); el.innerHTML = ''; ui.gym = null; ui.closing = false; render(false); }, reduced() ? 0 : 280);
 }
 function gymWrite(key, j, field, value) {
   const log = state.logs[ui.date] || (state.logs[ui.date] = { marks: {}, note: '' });
@@ -847,6 +858,7 @@ document.addEventListener('input', (e) => {
   if (key && (t.dataset.gkg || t.dataset.greps)) {
     const j = Number(t.dataset.gkg ?? t.dataset.greps);
     const row = t.closest('.set');
+    if (Number(t.value) < 0) t.value = '';
     gymWrite(key, j, t.dataset.gkg !== undefined ? 'kg' : 'reps', t.value);
     // Typing reps with the weight left blank uses the suggested weight shown in the box
     const kgIn = row.querySelector('[data-gkg]');
@@ -866,6 +878,7 @@ document.addEventListener('input', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.gym) closeGym(); });
+window.addEventListener('popstate', () => { if (ui.gym) closeGym(true); }); // phone back button closes the workout
 
 // ---------- Rest timer ----------
 // Starts when a set's reps are entered. Runs off a fixed end time, so it stays right
@@ -1079,6 +1092,7 @@ async function syncNow(first = false) {
     setSync(`Synced at ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`);
   } catch (e) {
     setSync(e instanceof TypeError ? 'Offline. Changes will sync when you are back online.' : e.message, !(e instanceof TypeError));
+    if (!(e instanceof TypeError) && ui.view !== 'settings') toast('Sync problem. Open Settings to see it');
   } finally { syncing = false; }
 }
 function queueSync(ms = 3000) {
@@ -1300,6 +1314,8 @@ $('#import-file').addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!data.schedule || !Array.isArray(data.categories)) throw new Error('bad file');
+    const hasLogs = data.logs && typeof data.logs === 'object' && Object.keys(data.logs).length > 0;
+    if (hasLogs && Object.keys(state.logs).length && !confirm('This file contains its own history. Replace the history on this device with it?')) delete data.logs;
     const kept = state.logs;
     const pv = state.presetVersion;
     const keptWorkouts = state.workouts;
@@ -1319,7 +1335,7 @@ $('#import-file').addEventListener('change', async (e) => {
 let dayShown = todayIso();
 function rollover() {
   const today = todayIso();
-  if (today === dayShown) return false;
+  if (today === dayShown || ui.gym) return false; // never switch days under an open workout
   if (ui.date === dayShown) ui.date = today; // was following "today": keep following it
   ui.week = iso(mondayOf(new Date()));
   dayShown = today;
@@ -1331,7 +1347,7 @@ setInterval(() => { if (!busy && rollover()) render(true); }, 60000);
 
 // Arrow keys step through days (Today) or weeks (Week)
 document.addEventListener('keydown', (e) => {
-  if (busy || e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (busy || ui.gym || e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   const dir = e.key === 'ArrowLeft' ? 'prev' : e.key === 'ArrowRight' ? 'next' : null;
   if (dir) document.querySelector(`#view-${ui.view} [data-action$="-${dir}"]`)?.click();
 });
