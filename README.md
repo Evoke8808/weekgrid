@@ -41,6 +41,10 @@ It loads automatically. Bump `version` to apply it again after editing; your log
 
  Edit it in **Timetable**, or import your own from **Settings → Import JSON** (see [`examples/sample-week.json`](examples/sample-week.json) for the format).
 
+## Install on your phone
+
+Open the live site in Chrome (Android) or Safari (iPhone) and choose **Add to Home screen** / **Install app**. It opens full-screen like a native app and works offline.
+
 ## Deploy free on GitHub Pages
 
 1. Push this repo to GitHub.
@@ -83,7 +87,6 @@ examples/    sample timetable to import
 
 ## Roadmap
 
-- [ ] PWA (install to home screen, works offline)
 - [ ] Reminders when a block starts
 - [ ] Light theme
 - [ ] Optional cloud sync
