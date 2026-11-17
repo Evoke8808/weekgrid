@@ -764,7 +764,7 @@ function renderSheet() {
       const hit = filled(s) && target && Number(s.reps) >= target;
       return `
         <div class="set ${filled(s) ? 'logged' : ''} ${hit ? 'hit' : ''}" data-set="${j}" style="--n:${j}">
-          <span class="set-n">${extra ? '+' : ''}${j + 1}</span>
+          <span class="set-n">${extra ? '+' : ''}${j + 1}<i class="set-gap"></i></span>
           <label class="set-in"><input type="number" inputmode="decimal" step="0.5" min="0" data-gkg="${j}" value="${esc(s.kg ?? '')}" placeholder="${esc((j && sets[j - 1].kg) || sugKg || (lastKg || ''))}" aria-label="Set ${j + 1} weight" /><span>kg</span></label>
           <label class="set-in reps"><input type="number" inputmode="numeric" min="0" data-greps="${j}" value="${esc(s.reps ?? '')}" placeholder="${target ?? ''}" aria-label="Set ${j + 1} ${unit}" /><span>/ ${target ?? '?'}${unit === 's' ? ' s' : ''}</span></label>
           ${extra ? `<button class="set-x" data-gaction="del-set" data-set="${j}" aria-label="Remove set ${j + 1}">✕</button>` : '<span></span>'}
@@ -798,6 +798,7 @@ function renderSheet() {
         <div class="muted small">${esc(fmtDate(fromIso(ui.date)))}</div></div>
         <button class="nav-btn" data-gaction="close" aria-label="Close">✕</button>
       </div>
+      ${paceHtml()}
       <div class="sheet-prog"><span id="gym-done">${done}</span> of ${total} sets logged
         <div class="cat-track"><div class="cat-fill" id="gym-fill" style="--w:${total ? Math.round((done / total) * 100) : 0}%;--c:${c}"></div></div></div>
       <div class="exs">${rows || '<div class="empty-state">Nothing here yet. Add your first exercise below.</div>'}</div>
@@ -818,6 +819,8 @@ function renderSheet() {
     </div>`;
   el.classList.add('open');
   paintRest();
+  refreshPace();
+  livePace();
 }
 
 function sheetCtx() {
@@ -855,7 +858,11 @@ function gymWrite(key, j, field, value) {
   const arr = log.gym[key] || (log.gym[key] = []);
   while (arr.length <= j) arr.push({});
   arr[j] = { ...arr[j], [field]: value };
+  // The moment a set's reps are first entered is when that set was done
+  if (field === 'reps' && value !== '' && !arr[j].at && ui.gym && ui.gym !== 'cardio') { startSession(); arr[j].at = Date.now(); }
+  if (field === 'reps' && value === '') delete arr[j].at;
   save();
+  if (field === 'reps') refreshPace();
 }
 function refreshGymProgress() {
   const w = sheetCtx();
@@ -954,6 +961,112 @@ document.addEventListener('input', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.gym) closeGym(); });
 window.addEventListener('popstate', () => { if (ui.gym) closeGym(true); }); // phone back button closes the workout
+
+// ---------- Session pace ----------
+// Times the workout: when it started, when each set was logged, the gap before each set,
+// and whether you will finish inside the time the timetable gives the gym block.
+const SLACK = 60; // seconds allowed beyond the chosen rest before a gap counts as slow
+const sesKey = () => ui.gym || 'free';
+const sessionOf = (dIso = ui.date) => logFor(dIso).sessions?.[sesKey()] || null;
+function startSession() {
+  const log = state.logs[ui.date] || (state.logs[ui.date] = { marks: {}, note: '' });
+  log.sessions = log.sessions || {};
+  if (!log.sessions[sesKey()]) { log.sessions[sesKey()] = { start: Date.now() }; save(); }
+}
+// Every logged set in this workout, in the order it was done
+function timeline() {
+  const ctx = sheetCtx();
+  if (!ctx) return [];
+  const g = logFor(ui.date).gym || {};
+  const out = [];
+  for (const ex of ctx.exercises) {
+    (g[exKey(ex.name)] || []).forEach((s, j) => { if (filled(s) && s.at) out.push({ key: exKey(ex.name), j, at: s.at }); });
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+function gaps() {
+  const ses = sessionOf();
+  const tl = timeline();
+  const m = {};
+  tl.forEach((x, i) => { m[`${x.key}|${x.j}`] = (x.at - (i ? tl[i - 1].at : ses?.start || x.at)) / 1000; });
+  return { tl, m };
+}
+const mins = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : mmss(Math.max(0, Math.round(s))));
+function paceInfo() {
+  const ctx = sheetCtx();
+  const ses = sessionOf();
+  if (!ctx || !ses) return null;
+  const allotted = ctx.b ? hours(ctx.b) * 3600 : 0;
+  const end = ses.end || Date.now();
+  const elapsed = (end - ses.start) / 1000;
+  const { tl } = gaps();
+  const total = ctx.exercises.reduce((a, ex) => a + Math.max(Number(ex.sets) || 1, (logFor(ui.date).gym?.[exKey(ex.name)] || []).length), 0);
+  const left = Math.max(0, total - tl.length);
+  const avg = tl.length ? (tl[tl.length - 1].at - ses.start) / 1000 / tl.length : 0;
+  const projected = tl.length ? elapsed + left * avg : 0;
+  const slow = Object.values(gaps().m).filter((g, i) => i > 0 && g > restLen() + SLACK);
+  const wasted = slow.reduce((a, g) => a + (g - restLen()), 0);
+  return { allotted, elapsed, avg, projected, left, done: tl.length, wasted, slowN: slow.length, ended: Boolean(ses.end) };
+}
+function paceHtml() {
+  const ses = sessionOf();
+  if (!ses) return `<div class="pace idle"><div><b>Session timer</b><div class="muted small">Starts by itself when you log your first set.</div></div><button class="chip-btn go" data-paction="start">Start now</button></div>`;
+  const p = paceInfo();
+  const over = p.allotted && p.elapsed > p.allotted;
+  const willOver = p.allotted && !p.ended && p.done >= 2 && p.projected > p.allotted;
+  const status = p.ended ? (over ? `Finished ${mins(p.elapsed - p.allotted)} over your slot` : `Finished with ${mins(p.allotted - p.elapsed)} to spare`)
+    : over ? `${mins(p.elapsed - p.allotted)} over your slot`
+    : willOver ? `At this pace you finish ${mins(p.projected - p.allotted)} late`
+    : p.done >= 2 && p.allotted ? `On pace, about ${mins(p.allotted - p.projected)} to spare` : 'Pace shows after two sets';
+  return `
+    <div class="pace ${over ? 'over' : willOver ? 'warn' : 'ok'}">
+      <div class="pace-figs">
+        <div><span class="pf" id="ses-elapsed">${mins(p.elapsed)}</span><span class="pl">${p.allotted ? `of ${mins(p.allotted)}` : 'elapsed'}</span></div>
+        <div><span class="pf">${p.done ? mmss(Math.round(p.avg)) : '–'}</span><span class="pl">per set</span></div>
+        <div><span class="pf ${p.wasted > 0 ? 'bad' : ''}">${p.wasted > 0 ? mins(p.wasted) : '0:00'}</span><span class="pl">extra rest${p.slowN ? `, ${p.slowN} slow` : ''}</span></div>
+      </div>
+      ${p.allotted ? `<div class="rest-track"><div class="pace-fill" id="ses-fill" style="width:${Math.min(100, (p.elapsed / p.allotted) * 100)}%"></div></div>` : ''}
+      <div class="pace-row"><span class="pace-msg">${status}</span>${p.ended ? '<button class="chip-btn" data-paction="resume">Resume</button>' : '<button class="chip-btn" data-paction="end">End session</button>'}</div>
+    </div>`;
+}
+let paceTick = null;
+function livePace() {
+  clearInterval(paceTick);
+  paceTick = setInterval(() => {
+    if (!ui.gym || ui.gym === 'cardio') { clearInterval(paceTick); return; }
+    const p = paceInfo();
+    const el = document.querySelector('#ses-elapsed');
+    if (!p || !el || p.ended) return;
+    el.textContent = mins(p.elapsed);
+    const f = document.querySelector('#ses-fill');
+    if (f) f.style.width = `${Math.min(100, (p.elapsed / p.allotted) * 100)}%`;
+    if (p.allotted && p.elapsed > p.allotted && !document.querySelector('.pace.over')) refreshPace();
+  }, 1000);
+}
+function refreshPace() {
+  const box = document.querySelector('.pace');
+  if (box) box.outerHTML = paceHtml();
+  const { m, tl } = gaps();
+  const first = tl[0] ? `${tl[0].key}|${tl[0].j}` : '';
+  document.querySelectorAll('.set').forEach((row) => {
+    const key = row.closest('.ex')?.dataset.ex;
+    const g = m[`${key}|${row.dataset.set}`];
+    const tag = row.querySelector('.set-gap');
+    if (!tag) return;
+    tag.textContent = g === undefined ? '' : `+${mmss(Math.round(g))}`;
+    tag.classList.toggle('slow', g !== undefined && g > restLen() + SLACK && first !== `${key}|${row.dataset.set}`); // the first set includes warm-up, so it is never slow
+  });
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-paction]');
+  if (!a) return;
+  const log = state.logs[ui.date] || (state.logs[ui.date] = { marks: {}, note: '' });
+  if (a.dataset.paction === 'start') startSession();
+  else if (a.dataset.paction === 'end') { log.sessions[sesKey()].end = Date.now(); save(); }
+  else if (a.dataset.paction === 'resume') { delete log.sessions[sesKey()].end; save(); }
+  refreshPace();
+  livePace();
+});
 
 // ---------- Rest timer ----------
 // Starts when a set's reps are entered. Runs off a fixed end time, so it stays right

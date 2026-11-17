@@ -781,3 +781,23 @@ h2, .sheet-title {
 .motion-off * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 .motion-off .block, .motion-off .panel, .motion-off .extra-card, .motion-off .ex, .motion-off .fig { background: #0e0e12; }
 .motion-off .top { background: #000; }
+
+/* ---------- Session pace ---------- */
+.pace { margin: 14px 0 4px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--rim, var(--line)); background: rgba(255,255,255,.03); }
+.pace.idle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pace-figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pf { display: block; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pf.bad { color: var(--coral); }
+.pl { display: block; font-size: 12px; color: var(--muted); }
+.pace .rest-track { margin: 10px 0 8px; }
+.pace-fill { height: 100%; border-radius: 99px; background: var(--mint); transition: width 1s linear; }
+.pace.warn .pace-fill { background: var(--amber); }
+.pace.over .pace-fill { background: var(--coral); }
+.pace-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pace-msg { font-size: 14px; font-weight: 700; color: var(--mint); }
+.pace.warn .pace-msg { color: var(--amber); }
+.pace.over .pace-msg { color: var(--coral); }
+.set-n { position: relative; }
+.set-gap { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; font-style: normal; font-size: 10px; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.set-gap.slow { color: var(--coral); }
+.set { margin-bottom: 6px; }
