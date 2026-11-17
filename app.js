@@ -374,7 +374,8 @@ function renderToday() {
     `<i class="seg s-${log.marks[b.id] || 'none'}" data-seg="${b.id}" style="--c:${tone(catOf(b.cat)?.color)};--i:${i};flex:${hours(b) || 1}"></i>`).join('')
     + (st.cardio ? `<i class="seg s-${log.cardio?.status || 'none'}" style="--c:${CARDIO_COLOR};--i:${blocks.length};flex:0.4"></i>` : '');
   const extraN = (log.extra || []).length;
-  const extras = `<div class="extras">${cardioCard(ui.date)}
+  const gymDay = blocks.some((b) => isTracked(b) && workoutFor(b));
+  const extras = `<div class="extras">${gymDay ? '' : cardioCard(ui.date)}
     <button class="extra-card" data-action="open-gym" data-id="free" style="--c:${DAY_COLORS[key]}"><span class="xc-title">${extraN ? 'Extra workout' : '+ Extra workout'}</span><span class="xc-sub">${extraN ? `${extraN} ${extraN === 1 ? 'exercise' : 'exercises'} added` : 'Add any exercise by name'}</span></button></div>`;
 
   const mon = mondayOf(d);
@@ -790,6 +791,7 @@ function renderSheet() {
       <div class="sheet-prog"><span id="gym-done">${done}</span> of ${total} sets logged
         <div class="cat-track"><div class="cat-fill" id="gym-fill" style="--w:${total ? Math.round((done / total) * 100) : 0}%;--c:${c}"></div></div></div>
       <div class="exs">${rows || '<div class="empty-state">Nothing here yet. Add your first exercise below.</div>'}</div>
+      ${b && state.cardio.machines.length ? `<div class="c-label">Cardio</div><div class="extras" style="grid-template-columns:1fr;margin:0">${cardioCard(ui.date).replace('data-id="cardio"', 'data-id="cardio" data-back="' + esc(b.id) + '"')}</div>` : ''}
       <div class="add-ex">
         <div class="c-label">Add an exercise for today</div>
         <div class="add-ex-row">
@@ -823,6 +825,10 @@ function openGym(id) {
   try { history.pushState({ gym: true }, ''); } catch (e) { /* some browsers refuse on file:// */ }
 }
 function closeGym(fromBack = false) {
+  if (ui.gym === 'cardio' && ui.backTo) {
+    if (ui.cardio && cardioElapsed() === 0) ui.cardio = null;
+    ui.gym = ui.backTo; ui.backTo = null; renderSheet(); return;
+  }
   if (!ui.gym || ui.closing) return;
   ui.closing = true;
   if (ui.gym === 'cardio' && ui.cardio && cardioElapsed() === 0) ui.cardio = null; // nothing started: forget the choices
@@ -858,7 +864,10 @@ function refreshGymProgress() {
 
 document.addEventListener('click', (e) => {
   const opener = e.target.closest('[data-action="open-gym"]');
-  if (opener) { openGym(opener.dataset.id); return; }
+  if (opener) {
+    if (ui.gym && opener.dataset.back) { ui.backTo = opener.dataset.back; ui.gym = 'cardio'; renderSheet(); return; }
+    openGym(opener.dataset.id); return;
+  }
   const g = e.target.closest('[data-gaction]');
   if (!g) return;
   const exEl = g.closest('.ex');

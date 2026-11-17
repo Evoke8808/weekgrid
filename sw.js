@@ -1,5 +1,5 @@
 // Offline support: app files are cached; network is used first so updates arrive when online.
-const CACHE = 'weekgrid-v6';
+const CACHE = 'weekgrid-v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
