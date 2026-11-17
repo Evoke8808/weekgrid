@@ -753,7 +753,7 @@ function renderSheet() {
       const extra = j >= (Number(ex.sets) || 1);
       const hit = filled(s) && target && Number(s.reps) >= target;
       return `
-        <div class="set ${filled(s) ? 'logged' : ''} ${hit ? 'hit' : ''}" data-set="${j}">
+        <div class="set ${filled(s) ? 'logged' : ''} ${hit ? 'hit' : ''}" data-set="${j}" style="--n:${j}">
           <span class="set-n">${extra ? '+' : ''}${j + 1}</span>
           <label class="set-in"><input type="number" inputmode="decimal" step="0.5" min="0" data-gkg="${j}" value="${esc(s.kg ?? '')}" placeholder="${esc((j && sets[j - 1].kg) || sugKg || (lastKg || ''))}" aria-label="Set ${j + 1} weight" /><span>kg</span></label>
           <label class="set-in reps"><input type="number" inputmode="numeric" min="0" data-greps="${j}" value="${esc(s.reps ?? '')}" placeholder="${target ?? ''}" aria-label="Set ${j + 1} ${unit}" /><span>/ ${target ?? '?'}${unit === 's' ? ' s' : ''}</span></label>
@@ -1671,4 +1671,19 @@ intro();
     el.style.setProperty('--tz', '8px');
   });
   document.addEventListener('pointerleave', () => { if (cur) { cur.classList.remove('leaning'); cur.style.removeProperty('--rx'); cur.style.removeProperty('--ry'); cur.style.removeProperty('--tz'); cur = null; } });
+})();
+
+// Phone: the page leans a little as the phone tilts. Off with reduced motion and while typing.
+(() => {
+  if (reduced() || matchMedia('(hover: hover) and (pointer: fine)').matches || !('DeviceOrientationEvent' in window)) return;
+  const main = document.querySelector('main');
+  let base = null, raf = 0, gx = 0, gy = 0;
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.beta === null || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') || ui.gym) return;
+    if (!base) base = { b: e.beta, g: e.gamma };
+    base.b += (e.beta - base.b) * 0.02; base.g += (e.gamma - base.g) * 0.02; // slowly re-centre on how it is held
+    gx = Math.max(-4, Math.min(4, -(e.beta - base.b) * 0.25));
+    gy = Math.max(-4, Math.min(4, (e.gamma - base.g) * 0.25));
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; main.classList.add('gyro'); main.style.setProperty('--gx', `${gx}deg`); main.style.setProperty('--gy', `${gy}deg`); });
+  });
 })();

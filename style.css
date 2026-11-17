@@ -603,3 +603,89 @@ body.locked { overflow: hidden; }
 /* Day strip tiles flip over when a day is chosen */
 .tile.sel { animation: tile-flip 0.6s var(--ease); }
 @keyframes tile-flip { from { transform: perspective(500px) rotateY(-180deg); } }
+
+/* ---------- 3D everywhere ---------- */
+main, .view { perspective: 1100px; }
+.top-in { perspective: 600px; }
+
+/* Wordmark letters stand up off the page and rock on hover */
+.wordmark { transform-style: preserve-3d; }
+.wordmark span { text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.5), 0 4px 8px rgba(0,0,0,.6); }
+@keyframes letter-in { from { opacity: 0; transform: rotateY(-100deg) translateZ(40px); } }
+.wordmark:hover span { transform: rotateX(25deg) translateZ(10px); }
+
+/* Tabs flip like cards when chosen */
+.tab { transform-style: preserve-3d; transition: color 0.25s, transform 0.5s var(--ease); }
+.tab.active { animation: tab-flip 0.55s var(--ease); }
+@keyframes tab-flip { from { transform: rotateX(-180deg); } }
+
+/* Hero: weekday letters drop in edge-on, the % number has depth */
+.dow { perspective: 500px; }
+@keyframes letter-up { from { opacity: 0; transform: rotateX(-95deg) translateZ(30px); transform-origin: 50% 100%; } }
+.pct { text-shadow: 0 1px 0 #222, 0 2px 0 #1a1a1a, 0 3px 0 #141414, 0 6px 14px rgba(0,0,0,.8); }
+.nav-btn { transition: transform 0.35s var(--spring), color 0.2s, border-color 0.2s; }
+.nav-btn:hover { transform: rotateY(25deg) scale(1.1); }
+.hero-glow { transform-style: preserve-3d; }
+
+/* Progress segments and tiles stand up from the floor */
+.segs { perspective: 400px; }
+.seg { transform: rotateX(28deg); transform-origin: bottom; }
+.seg.s-done { box-shadow: 0 -4px 0 color-mix(in srgb, var(--c) 55%, #000) inset, 0 0 12px color-mix(in srgb, var(--c) 40%, transparent); }
+@keyframes seg-pop { 0% { transform: rotateX(90deg); } 60% { transform: rotateX(-20deg) scaleY(1.6); } }
+.strip { perspective: 600px; }
+@keyframes rise { from { opacity: 0; transform: perspective(800px) rotateX(-40deg) translateY(16px); } }
+
+/* Blocks have a lit edge; a marked block lifts toward you */
+.block { transform-style: preserve-3d; transition: border-color 0.3s, background 0.4s, transform 0.45s var(--ease), box-shadow 0.45s var(--ease); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+.block.st-done { transform: translateZ(10px); box-shadow: 0 14px 30px -18px color-mix(in srgb, var(--c) 70%, transparent); }
+.block.st-missed { transform: translateZ(-14px) rotateX(4deg); opacity: 0.8; }
+.mark { transform-style: preserve-3d; }
+.mark:hover { transform: translateY(-2px) rotateX(20deg) scale(1.06); }
+.mark.on { box-shadow: 0 4px 0 rgba(0,0,0,.45); }
+
+/* Extras, nudge and note card swing in */
+.extras { perspective: 800px; }
+.enter .extra-card { animation: rise 0.6s var(--ease) both; animation-delay: 0.55s; }
+.nudge { transform-origin: 0 50%; animation: door 0.6s var(--ease) both; }
+@keyframes door { from { transform: perspective(700px) rotateY(-70deg); opacity: 0; } }
+textarea { transition: border-color 0.2s, box-shadow 0.2s, transform 0.4s var(--ease); }
+textarea:focus { transform: perspective(700px) translateZ(14px); }
+
+/* Week: figures rotate in, heatmap cells pop up out of the floor */
+.figs { perspective: 700px; }
+.fig .num { text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 6px 14px rgba(0,0,0,.7); }
+.enter .fig { animation: spin-in 0.8s var(--ease) both; animation-delay: calc(var(--i) * 90ms); }
+@keyframes spin-in { from { opacity: 0; transform: rotateY(-90deg) translateZ(40px); } }
+.heat { perspective: 600px; transform: rotateX(18deg); transform-origin: 50% 100%; }
+@keyframes cell-in { from { opacity: 0; transform: translateZ(120px) rotateX(-90deg); } }
+.cell:hover { transform: translateZ(18px) scale(1.15); }
+.enter .cat-row { animation: rise 0.6s var(--ease) both; animation-delay: calc(0.2s + var(--i, 0) * 70ms); }
+
+/* Timetable and settings rows fold down like index cards */
+.enter .edit-row { animation: fold 0.55s var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms); }
+@keyframes fold { from { opacity: 0; transform: perspective(700px) rotateX(-75deg); transform-origin: 50% 0; } }
+.day-tabs { perspective: 500px; }
+.day-tabs .btn { transition: transform 0.45s var(--ease), background 0.2s, color 0.2s; }
+.day-tabs .btn.active { transform: rotateX(360deg) translateZ(6px); }
+.btn { transform-style: preserve-3d; }
+.btn:hover { transform: translateY(-1px) rotateX(12deg); }
+.btn.primary { box-shadow: 0 4px 0 color-mix(in srgb, var(--mint) 45%, #000); }
+.btn.primary:active { transform: translateY(3px); box-shadow: 0 1px 0 color-mix(in srgb, var(--mint) 45%, #000); }
+
+/* Workout: sets stack in, a logged set flips its number, the rest clock has depth */
+.sets { perspective: 600px; }
+.ex.open .set { animation: fold 0.45s var(--ease) both; animation-delay: calc(var(--n, 0) * 40ms); }
+.set.logged .set-n { transform: rotateY(360deg); transition: transform 0.6s var(--ease), background 0.25s, color 0.25s; }
+#rest-time, .c-time { text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 6px 18px rgba(0,0,0,.8); }
+.rest.on #rest-time { animation: breathe3d 1s ease-in-out infinite; display: inline-block; }
+@keyframes breathe3d { 50% { transform: perspective(300px) translateZ(12px); } }
+.machs { perspective: 700px; }
+.mach.sel { transform: translateZ(10px) rotateX(6deg); }
+.chip-btn.sel { transform: translateZ(4px); box-shadow: 0 3px 0 rgba(0,0,0,.5); }
+
+/* Toast flips up from below */
+.toast { transition: transform 0.5s var(--spring); transform: translateX(-50%) translateY(90px) perspective(400px) rotateX(-80deg); }
+.toast.show { transform: translateX(-50%) translateY(0) perspective(400px) rotateX(0); }
+
+/* Phone: the whole page leans slightly with the phone (set by app.js) */
+main.gyro { transform: perspective(1200px) rotateX(var(--gx, 0deg)) rotateY(var(--gy, 0deg)); transition: transform 0.25s linear; }
