@@ -758,3 +758,26 @@ h2, .sheet-title {
 @keyframes float { 50% { transform: translateY(-4px) rotateX(2deg); } }
 
 @media (prefers-reduced-motion: reduce) { #scene { opacity: 0.35; } }
+
+/* ---------- Motion levels ---------- */
+/* Lite: same look, cheaper to draw. Blur is the costliest effect on phones, so glass turns solid. */
+.motion-lite .block, .motion-lite .panel, .motion-lite .extra-card, .motion-lite .tile, .motion-lite .nav-btn, .motion-lite .btn,
+.motion-lite textarea, .motion-lite .mark, .motion-lite .fig, .motion-lite .ex, .motion-lite .mach, .motion-lite .chip-btn,
+.motion-lite .field, .motion-lite .edit-row input, .motion-lite .edit-row select, .motion-lite .nudge, .motion-lite .top,
+.motion-lite .sheet-card, .motion-lite .sheet-back, .motion-lite .rest {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+.motion-lite .block, .motion-lite .panel, .motion-lite .extra-card, .motion-lite .ex, .motion-lite .fig { background: rgba(14, 14, 18, 0.86); }
+.motion-lite .block.st-done { background: linear-gradient(100deg, color-mix(in srgb, var(--c) 22%, #0e0e12), #0e0e12 70%); }
+.motion-lite .top { background: rgba(0, 0, 0, 0.92); }
+.motion-lite .hero, .motion-lite .hero-glow, .motion-lite .pct::before, .motion-lite .streak .flame,
+.motion-lite .rest.on #rest-time { animation: none !important; }
+.motion-lite .pct::before { filter: none; }
+.motion-lite .dow { text-shadow: 0 2px 0 color-mix(in srgb, var(--day) 55%, #000), 0 4px 0 color-mix(in srgb, var(--day) 35%, #000); }
+
+/* Off: nothing moves, no scene, no blur */
+.motion-off *, .motion-off *::before, .motion-off *::after { animation: none !important; transition: none !important; }
+.motion-off #scene, .motion-off .hero-glow { display: none; }
+.motion-off * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.motion-off .block, .motion-off .panel, .motion-off .extra-card, .motion-off .ex, .motion-off .fig { background: #0e0e12; }
+.motion-off .top { background: #000; }

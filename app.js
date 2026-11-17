@@ -297,7 +297,12 @@ function tone(hex) {
 }
 const PALETTE = Object.values(DAY_COLORS);
 const TAB_INK = { today: '#86cfb0', week: '#8fa8e8', timetable: '#dcc08a', settings: '#d6a3c4' };
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Motion level, chosen per device: full, lite (phone friendly) or off. Phones start on lite.
+const isPhone = matchMedia('(hover: none) and (pointer: coarse)').matches;
+const motion = (() => { try { return localStorage.getItem('weekgrid:motion') || (isPhone ? 'lite' : 'full'); } catch (e) { return 'full'; } })();
+document.documentElement.classList.add(`motion-${motion}`);
+const reduced = () => motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const lite = () => motion === 'lite';
 const rand = (a, b) => a + Math.random() * (b - a);
 const shortDate = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
@@ -600,6 +605,10 @@ function renderSettings() {
     <p class="muted small">A gym block opens the workout whose name appears in its title, like "Gym: Push A". Targets stay fixed while you log what you actually did.</p>
     ${renderWorkoutEditor()}
     <button class="btn primary" data-waction="add-wo" style="margin-top:6px">+ Add workout</button>
+
+    <h3>Animations</h3>
+    <p class="muted small">Saved on this device only. Lite keeps the look but drops the heavy effects, which is easier on a phone's battery.</p>
+    <div class="rest-row">${[['full', 'Full'], ['lite', 'Lite'], ['off', 'Off']].map(([k, l]) => `<button class="chip-btn ${motion === k ? 'sel' : ''}" data-motion="${k}">${l}</button>`).join('')}</div>
 
     <h3>Streak</h3>
     <div class="row"><span>A day counts toward your streak at</span>
@@ -1466,13 +1475,13 @@ const scene = (() => {
     }
   }
   function size() {
-    dpr = Math.min(2, window.devicePixelRatio || 1);
+    dpr = lite() ? 1 : Math.min(2, window.devicePixelRatio || 1);
     w = innerWidth; h = innerHeight;
     cv.width = w * dpr; cv.height = h * dpr;
   }
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || now - (frame.last || 0) < 31) return; // ~30 fps is plenty and saves battery
+    if (document.hidden || ui.gym || now - (frame.last || 0) < (lite() ? 66 : 31)) return; // 30 fps, 15 on lite; paused under a workout
     frame.last = now;
     const t = (now - t0) / 1000;
     mx += (tx - mx) * 0.05; my += (ty - my) * 0.05;
@@ -1783,7 +1792,7 @@ intro();
 
 // Phone: the page leans a little as the phone tilts. Off with reduced motion and while typing.
 (() => {
-  if (reduced() || matchMedia('(hover: hover) and (pointer: fine)').matches || !('DeviceOrientationEvent' in window)) return;
+  if (reduced() || lite() || matchMedia('(hover: hover) and (pointer: fine)').matches || !('DeviceOrientationEvent' in window)) return;
   const main = document.querySelector('main');
   let base = null, raf = 0, gx = 0, gy = 0;
   window.addEventListener('deviceorientation', (e) => {
@@ -1795,3 +1804,10 @@ intro();
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; main.classList.add('gyro'); main.style.setProperty('--gx', `${gx}deg`); main.style.setProperty('--gy', `${gy}deg`); });
   });
 })();
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-motion]');
+  if (!b || b.dataset.motion === motion) return;
+  try { localStorage.setItem('weekgrid:motion', b.dataset.motion); } catch (err) { /* storage blocked */ }
+  location.reload(); // simplest way to start every effect from the new level
+});
