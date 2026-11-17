@@ -214,6 +214,7 @@ function applyPreset() {
 }
 
 function setMark(dIso, blockId, status) {
+  setTimeout(() => scene.refresh(dIso), 0);
   const log = state.logs[dIso] || (state.logs[dIso] = { marks: {}, note: '' });
   if (log.marks[blockId] === status) delete log.marks[blockId];
   else log.marks[blockId] = status;
@@ -429,7 +430,7 @@ function renderToday() {
         <button class="nav-btn" data-action="day-next" aria-label="Next day">›</button>
       </div>
       <div class="hero-score">
-        <div class="pct"><span id="pct-num">${from}</span><span class="pct-sign">%</span></div>
+        <div class="pct" style="--p:${st.pct || 0}"><span id="pct-num">${from}</span><span class="pct-sign">%</span></div>
         <div class="hero-side">
           <div class="hero-msg ${msgCls}">${msg}</div>
           ${n ? `<div class="streak"><span class="flame">🔥</span> ${n} day streak</div>` : `<div class="muted small">${st.marked} of ${st.count} blocks marked</div>`}
@@ -1437,6 +1438,111 @@ document.addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSync(300); });
 window.addEventListener('online', () => queueSync(300));
 
+// ---------- 3D scene ----------
+// Behind the app floats a 3D grid of your last 8 weeks: one block per day, as tall as that
+// day's score, in the weekday's colour. It slowly orbits and follows the pointer or the phone.
+const scene = (() => {
+  const cv = document.createElement('canvas');
+  cv.id = 'scene';
+  cv.setAttribute('aria-hidden', 'true');
+  document.body.prepend(cv);
+  const ctx = cv.getContext('2d');
+  const W = 7, H = 8, GAP = 1.25;
+  let cells = [], dpr = 1, w = 0, h = 0, t0 = performance.now(), mx = 0, my = 0, tx = 0, ty = 0, focus = null, pulse = 0, raf = 0;
+  const hex = (c) => { const m = /#?([0-9a-f]{6})/i.exec(c || ''); const n = m ? parseInt(m[1], 16) : 0x888888; return [n >> 16, (n >> 8) & 255, n & 255]; };
+
+  function data() {
+    const cur = mondayOf(new Date());
+    cells = [];
+    for (let r = 0; r < H; r++) {
+      const wk = addDays(cur, -7 * (H - 1 - r));
+      for (let c = 0; c < W; c++) {
+        const dIso = iso(addDays(wk, c));
+        const s = counts(dIso) ? dayStats(dIso) : null;
+        const v = s && s.pct !== null ? (dIso === todayIso() ? s.soFar ?? 0 : s.pct) / 100 : -1;
+        const old = cells.find((x) => x.dIso === dIso);
+        cells.push({ dIso, c, r, v, h: old ? old.h : 0, rgb: hex(DAY_COLORS[DAYS[c]]) });
+      }
+    }
+  }
+  function size() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = innerWidth; h = innerHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+  }
+  function frame(now) {
+    raf = requestAnimationFrame(frame);
+    if (document.hidden || now - (frame.last || 0) < 31) return; // ~30 fps is plenty and saves battery
+    frame.last = now;
+    const t = (now - t0) / 1000;
+    mx += (tx - mx) * 0.05; my += (ty - my) * 0.05;
+    pulse *= 0.94;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const yaw = -0.62 + Math.sin(t * 0.12) * 0.22 + mx * 0.35;
+    const pitch = 0.78 + my * 0.12;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const scale = Math.min(w * 0.075, h * 0.06);
+    const ox = w * 0.5, oy = h * 0.62;
+    const P = (x, y, z) => {
+      x -= (W - 1) * GAP / 2; z -= (H - 1) * GAP / 2;
+      const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+      const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+      const f = 9 / (9 + z2);
+      return [ox + x1 * scale * f, oy - y1 * scale * f, z2];
+    };
+    const list = cells.map((k) => {
+      const target = k.v < 0 ? 0.06 : 0.12 + k.v * 2.6 + (k.dIso === focus ? pulse * 1.2 : 0);
+      k.h += (target - k.h) * 0.06;
+      const x = k.c * GAP, z = k.r * GAP;
+      return { k, d: P(x + 0.5, 0, z + 0.5)[2] };
+    }).sort((a, b) => b.d - a.d);
+    const today = todayIso();
+    for (const { k } of list) {
+      const x = k.c * GAP, z = k.r * GAP, s = 1, y = k.h;
+      const v = [P(x, 0, z), P(x + s, 0, z), P(x + s, 0, z + s), P(x, 0, z + s), P(x, y, z), P(x + s, y, z), P(x + s, y, z + s), P(x, y, z + s)];
+      const [r, g, b] = k.v < 0 ? [60, 60, 60] : k.rgb;
+      const a = k.v < 0 ? 0.35 : 0.35 + k.v * 0.65;
+      const face = (idx, light) => {
+        ctx.beginPath();
+        idx.forEach((i, j) => (j ? ctx.lineTo(v[i][0], v[i][1]) : ctx.moveTo(v[i][0], v[i][1])));
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${Math.round(r * light)},${Math.round(g * light)},${Math.round(b * light)},${a})`;
+        ctx.fill();
+      };
+      // draw the sides facing the camera, then the top
+      const sides = [[0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+      sides.map((f, i) => ({ f, i, z: (v[f[0]][2] + v[f[1]][2]) / 2 })).sort((p, q) => q.z - p.z).slice(2)
+        .forEach(({ f, i }) => face(f, i % 2 ? 0.42 : 0.6));
+      face([4, 5, 6, 7], 1);
+      if (k.v >= 0.7 || k.dIso === today) {
+        ctx.save();
+        ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
+        ctx.shadowBlur = 18 + (k.dIso === focus ? pulse * 40 : 0);
+        ctx.strokeStyle = k.dIso === today ? 'rgba(255,255,255,0.85)' : `rgba(${r},${g},${b},0.9)`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        [4, 5, 6, 7].forEach((i, j) => (j ? ctx.lineTo(v[i][0], v[i][1]) : ctx.moveTo(v[i][0], v[i][1])));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+  function start() {
+    size(); data();
+    addEventListener('resize', size);
+    addEventListener('pointermove', (e) => { tx = e.clientX / w - 0.5; ty = e.clientY / h - 0.5; });
+    addEventListener('deviceorientation', (e) => { if (e.gamma !== null) { tx = Math.max(-0.5, Math.min(0.5, e.gamma / 60)); ty = Math.max(-0.5, Math.min(0.5, (e.beta - 45) / 90)); } });
+    if (reduced()) { frame(performance.now()); cancelAnimationFrame(raf); return; }
+    raf = requestAnimationFrame(frame);
+  }
+  return {
+    start,
+    refresh(dIso) { data(); if (dIso) { focus = dIso; pulse = 1; } if (reduced()) frame(performance.now()), cancelAnimationFrame(raf); }
+  };
+})();
+
 // ---------- Rendering / navigation ----------
 const RENDER = { today: renderToday, week: renderWeek, timetable: renderTimetable, settings: renderSettings };
 
@@ -1449,6 +1555,7 @@ function render(enter = false) {
   view.classList.remove('enter');
   if (ui.enter) { void view.offsetWidth; view.classList.add('enter'); }
   moveInk();
+  scene.refresh();
 }
 
 function toast(msg) {
@@ -1649,6 +1756,7 @@ rebuildShadow();
 save(); // sets firstLog
 freezePast();
 applyPreset();
+scene.start();
 intro();
 
 // ---------- 3D tilt ----------

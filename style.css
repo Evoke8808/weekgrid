@@ -689,3 +689,72 @@ textarea:focus { transform: perspective(700px) translateZ(14px); }
 
 /* Phone: the whole page leans slightly with the phone (set by app.js) */
 main.gyro { transform: perspective(1200px) rotateX(var(--gx, 0deg)) rotateY(var(--gy, 0deg)); transition: transform 0.25s linear; }
+
+/* ================= New look: glass over a live 3D scene ================= */
+#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; opacity: 0.7; }
+body::after { /* vignette keeps text readable over the scene */
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(120% 80% at 50% 30%, transparent 30%, rgba(0,0,0,.75) 75%, #000 100%);
+}
+.top, main { position: relative; z-index: 1; }
+.top { background: rgba(0, 0, 0, 0.55); }
+
+:root {
+  --glass: rgba(14, 14, 18, 0.58);
+  --glass-hi: rgba(255, 255, 255, 0.06);
+  --rim: rgba(255, 255, 255, 0.09);
+}
+.block, .panel, .extra-card, .tile, .nav-btn, .btn, textarea, .mark, .empty-state, .fig, .ex, .mach, .chip-btn, .edit-row input, .edit-row select, .field, .nudge {
+  background: linear-gradient(160deg, var(--glass-hi), transparent 40%), var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
+  border-color: var(--rim);
+}
+.block, .panel, .extra-card, .ex {
+  box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -1px 0 rgba(0,0,0,.5) inset, 0 18px 40px -22px rgba(0,0,0,.9);
+}
+.block.fixed { background: rgba(0,0,0,.25); }
+.block.st-done { background: linear-gradient(100deg, color-mix(in srgb, var(--c) 26%, transparent), var(--glass) 70%); border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+.fig { padding: 14px; border-radius: 18px; border: 1px solid var(--rim); }
+
+/* Extruded 3D type */
+.dow {
+  font-size: clamp(52px, 14vw, 96px);
+  text-shadow:
+    0 1px 0 color-mix(in srgb, var(--day) 70%, #000), 0 2px 0 color-mix(in srgb, var(--day) 62%, #000),
+    0 3px 0 color-mix(in srgb, var(--day) 54%, #000), 0 4px 0 color-mix(in srgb, var(--day) 46%, #000),
+    0 5px 0 color-mix(in srgb, var(--day) 38%, #000), 0 6px 0 color-mix(in srgb, var(--day) 30%, #000),
+    0 14px 30px rgba(0,0,0,.8), 0 0 60px color-mix(in srgb, var(--day) 35%, transparent);
+}
+h2, .sheet-title {
+  text-shadow: 0 1px 0 #333, 0 2px 0 #262626, 0 3px 0 #1a1a1a, 0 10px 22px rgba(0,0,0,.8);
+}
+.wordmark { font-size: 28px; }
+.wordmark span { text-shadow: 0 1px 0 rgba(0,0,0,.55), 0 2px 0 rgba(0,0,0,.45), 0 3px 0 rgba(0,0,0,.35), 0 0 18px currentColor; }
+
+/* Score ring: a tilted glowing disc behind the % */
+.hero-score { align-items: center; }
+.pct { position: relative; padding: 18px 26px 18px 22px; }
+.pct::before {
+  content: ""; position: absolute; inset: -6px -14px; z-index: -1; border-radius: 50%;
+  background: conic-gradient(var(--day) calc(var(--p, 0) * 1%), rgba(255,255,255,.06) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  transform: perspective(500px) rotateX(62deg); filter: drop-shadow(0 0 10px var(--day));
+  transition: background 0.6s var(--ease);
+  animation: ring-spin 14s linear infinite;
+}
+@keyframes ring-spin { to { transform: perspective(500px) rotateX(62deg) rotateZ(360deg); } }
+
+/* Day tiles become little 3D pillars */
+.tile { height: 64px; border-radius: 14px; transform-style: preserve-3d; }
+.tile .fill { box-shadow: 0 -3px 12px color-mix(in srgb, var(--d) 50%, transparent); }
+.tile.sel { box-shadow: 0 0 0 1px var(--d), 0 18px 30px -12px color-mix(in srgb, var(--d) 70%, transparent); transform: translateY(-4px); }
+
+/* Workout sheet: deep glass */
+.sheet-card { background: linear-gradient(180deg, rgba(255,255,255,.05), transparent 120px), rgba(6,6,9,.88); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+
+/* Gentle float on the hero so the page feels alive */
+.hero { animation: float 7s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-4px) rotateX(2deg); } }
+
+@media (prefers-reduced-motion: reduce) { #scene { opacity: 0.35; } }
