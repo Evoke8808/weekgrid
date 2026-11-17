@@ -601,6 +601,10 @@ function renderSettings() {
     <h3>Cardio</h3>
     ${renderCardioSettings()}
 
+    <h3>Before you leave the gym</h3>
+    <p class="muted small">Shown when you tap Mark gym done. One item per line.</p>
+    <textarea id="pack-list" rows="5" placeholder="Water bottle">${esc(packList().join('\n'))}</textarea>
+
     <h3>Workouts</h3>
     <p class="muted small">A gym block opens the workout whose name appears in its title, like "Gym: Push A". Targets stay fixed while you log what you actually did.</p>
     ${renderWorkoutEditor()}
@@ -922,6 +926,7 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'finish': {
+      if (!g.dataset.packed && packList().length) { showPack(); return; }
       const prev = dayStats(ui.date).pct || 0;
       const id = ui.gym;
       if (logFor(ui.date).marks?.[id] !== 'done') setMark(ui.date, id, 'done');
@@ -1923,4 +1928,44 @@ document.addEventListener('click', (e) => {
   if (!b || b.dataset.motion === motion) return;
   try { localStorage.setItem('weekgrid:motion', b.dataset.motion); } catch (err) { /* storage blocked */ }
   location.reload(); // simplest way to start every effect from the new level
+});
+
+// ---------- Leaving the gym ----------
+// A checklist shown on "Mark gym done", so nothing gets left behind.
+const PACK_DEFAULT = ['Water bottle', 'Towel', 'Phone', 'Earphones', 'Keys', 'Wallet or ID card', 'Locker emptied'];
+function packList() {
+  const v = state.settings.pack;
+  return Array.isArray(v) ? v : PACK_DEFAULT;
+}
+function showPack() {
+  const card = document.querySelector('.sheet-card');
+  if (!card) return;
+  const items = packList();
+  const ov = document.createElement('div');
+  ov.className = 'pack';
+  ov.innerHTML = `
+    <div class="pack-card" role="dialog" aria-modal="true" aria-label="Before you leave">
+      <div class="sheet-title" style="font-size:24px">Don't forget your things</div>
+      <div class="muted small">Tick each one as you pack it.</div>
+      <div class="pack-items">${items.map((t, i) => `<label class="pack-item" style="--i:${i}"><input type="checkbox" /><span>${esc(t)}</span></label>`).join('')}</div>
+      <div class="c-actions">
+        <button class="btn" data-pack="back">Back</button>
+        <button class="btn primary" data-gaction="finish" data-packed="1" disabled>Pack everything first</button>
+      </div>
+    </div>`;
+  card.appendChild(ov);
+  const go = ov.querySelector('[data-packed]');
+  ov.addEventListener('change', () => {
+    const left = [...ov.querySelectorAll('input')].filter((x) => !x.checked).length;
+    go.disabled = left > 0;
+    go.textContent = left ? `${left} still to pack` : 'All packed, mark gym done';
+    if (!left) navigator.vibrate?.(40);
+  });
+  go.textContent = `${items.length} still to pack`;
+  ov.querySelector('[data-pack="back"]').addEventListener('click', () => ov.remove());
+}
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'pack-list') return;
+  state.settings.pack = e.target.value.split('\n').map((x) => x.trim()).filter(Boolean);
+  save();
 });

@@ -801,3 +801,15 @@ h2, .sheet-title {
 .set-gap { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; font-style: normal; font-size: 10px; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .set-gap.slow { color: var(--coral); }
 .set { margin-bottom: 6px; }
+
+/* ---------- Leaving the gym ---------- */
+.pack { position: absolute; inset: 0; z-index: 5; display: flex; align-items: flex-end; background: rgba(0,0,0,.6); border-radius: inherit; animation: fade 0.25s ease both; }
+.pack-card { width: 100%; padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); background: #0b0b0f; border-top: 1px solid var(--line); border-radius: 22px 22px 0 0; animation: sheet-up-lite 0.45s var(--ease) both; }
+@keyframes sheet-up-lite { from { transform: translateY(40%) perspective(800px) rotateX(20deg); opacity: 0; } }
+.pack-items { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 4px; }
+.pack-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; cursor: pointer; animation: rise 0.4s var(--ease) both; animation-delay: calc(var(--i) * 40ms); transition: border-color 0.2s, opacity 0.2s; }
+.pack-item input { width: 20px; height: 20px; accent-color: var(--mint); }
+.pack-item:has(input:checked) { border-color: color-mix(in srgb, var(--mint) 50%, var(--line)); }
+.pack-item:has(input:checked) span { text-decoration: line-through; opacity: 0.55; }
+.pack .btn.primary:disabled { opacity: 0.5; cursor: default; }
+#pack-list { min-height: 130px; }
