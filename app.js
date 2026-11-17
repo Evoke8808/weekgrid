@@ -1650,3 +1650,25 @@ save(); // sets firstLog
 freezePast();
 applyPreset();
 intro();
+
+// ---------- 3D tilt ----------
+// Cards lean toward the pointer on laptops. Skipped on touch screens and with reduced motion.
+(() => {
+  if (reduced() || !matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  const SEL = '.block:not(.fixed), .extra-card, .tile, .panel, .fig, .mach';
+  let cur = null;
+  document.addEventListener('pointermove', (e) => {
+    const el = e.target.closest(SEL);
+    if (cur && cur !== el) { cur.classList.remove('leaning'); cur.style.removeProperty('--rx'); cur.style.removeProperty('--ry'); cur.style.removeProperty('--tz'); }
+    cur = el;
+    if (!el) return;
+    el.classList.add('tilt', 'leaning');
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+    const k = r.width > 400 ? 3 : 9; // big panels lean less
+    el.style.setProperty('--ry', `${x * k}deg`);
+    el.style.setProperty('--rx', `${-y * k}deg`);
+    el.style.setProperty('--tz', '8px');
+  });
+  document.addEventListener('pointerleave', () => { if (cur) { cur.classList.remove('leaning'); cur.style.removeProperty('--rx'); cur.style.removeProperty('--ry'); cur.style.removeProperty('--tz'); cur = null; } });
+})();
