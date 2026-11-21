@@ -13,6 +13,11 @@ const json = (body, status = 200) =>
 // db: { get(id) -> { v, d } | null, cas(id, base, d) -> newVersion | -1 (someone wrote first) }
 export async function handle(request, db) {
   if (!db) return json({ error: 'Sync storage is not set up on the server' }, 503);
+  try { return await route(request, db); }
+  catch (e) { console.error('sync storage', e); return json({ error: 'Sync storage error, try again shortly' }, 502); }
+}
+
+async function route(request, db) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id') || '';
   if (!ID.test(id)) return json({ error: 'Bad sync id' }, 400);
@@ -49,6 +54,41 @@ export function memoryDb() {
       if (cur !== base) return -1;
       rooms.set(id, { v: cur + 1, d });
       return cur + 1;
+    }
+  };
+}
+
+// Vercel Blob (private store). Each room is one small JSON file { v, d }; writes are conditional on
+// the file's ETag, so two devices saving at once cannot overwrite each other.
+export function blobDb(env = process.env, sdk = null) {
+  if (!env.BLOB_READ_WRITE_TOKEN && !env.BLOB_STORE_ID) return null;
+  const lib = () => sdk || import('@vercel/blob');
+  const path = (id) => `sync/${id}.json`;
+  const opts = { access: 'private', contentType: 'application/json', addRandomSuffix: false, cacheControlMaxAge: 60 };
+
+  async function read(id) {
+    const { get } = await lib();
+    const r = await get(path(id), { access: 'private', useCache: false });
+    if (!r || r.statusCode !== 200 || !r.stream) return null;
+    return { room: JSON.parse(await new Response(r.stream).text()), etag: r.blob.etag };
+  }
+
+  return {
+    async get(id) { return (await read(id))?.room || null; },
+    async cas(id, base, d) {
+      const { put, BlobPreconditionFailedError } = await lib();
+      const cur = await read(id);
+      if ((cur?.room.v || 0) !== base) return -1;
+      const body = JSON.stringify({ v: base + 1, d });
+      try {
+        if (cur) await put(path(id), body, { ...opts, ifMatch: cur.etag });
+        else await put(path(id), body, { ...opts, allowOverwrite: false });
+      } catch (e) {
+        if (BlobPreconditionFailedError && e instanceof BlobPreconditionFailedError) return -1;
+        if (!cur && (await read(id))) return -1; // another device created the room a moment earlier
+        throw e;
+      }
+      return base + 1;
     }
   };
 }

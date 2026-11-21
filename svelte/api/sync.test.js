@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { handle, memoryDb, redisDb, MAX_BYTES } from './_sync.js';
+import { handle, memoryDb, redisDb, blobDb, MAX_BYTES } from './_sync.js';
 
 const ID = 'a'.repeat(32);
 const req = (method, body, id = ID) => new Request(`http://x/api/sync?id=${id}`, {
@@ -32,5 +32,35 @@ describe('sync api', () => {
   it('says so when the server has no database', async () => {
     expect(redisDb({})).toBeNull();
     expect((await handle(req('GET'), null)).status).toBe(503);
+  });
+
+  it('Vercel Blob store: conditional writes, conflicts and storage errors', async () => {
+    class BlobPreconditionFailedError extends Error {}
+    const files = new Map(); let n = 0;
+    const sdk = {
+      BlobPreconditionFailedError,
+      async get(p) { const f = files.get(p); return f ? { statusCode: 200, stream: new Response(f.body).body, blob: { etag: f.etag } } : null; },
+      async put(p, body, o) {
+        const f = files.get(p);
+        if (o.ifMatch && (!f || f.etag !== o.ifMatch)) throw new BlobPreconditionFailedError();
+        if (!o.ifMatch && f && !o.allowOverwrite) throw new Error('This blob already exists');
+        files.set(p, { body, etag: `e${++n}` });
+      }
+    };
+    expect(blobDb({})).toBeNull();
+    const db = blobDb({ BLOB_READ_WRITE_TOKEN: 'x' }, sdk);
+    expect((await handle(req('GET'), db)).status).toBe(404);
+    expect(await (await handle(req('PUT', { base: 0, d: 'QUJD' }), db)).json()).toEqual({ v: 1 });
+    expect((await handle(req('PUT', { base: 0, d: 'QUJD' }), db)).status).toBe(409);
+    expect(await (await handle(req('PUT', { base: 1, d: 'WFla' }), db)).json()).toEqual({ v: 2 });
+    expect(await (await handle(req('GET'), db)).json()).toEqual({ v: 2, d: 'WFla' });
+    expect([...files.keys()]).toEqual([`sync/${ID}.json`]);
+
+    // someone writes between our read and our write → conflict, not an overwrite
+    const realPut = sdk.put;
+    sdk.put = async (p, b, o) => { files.set(p, { body: JSON.stringify({ v: 3, d: 'Wg==' }), etag: 'sneaky' }); return realPut(p, b, o); };
+    expect((await handle(req('PUT', { base: 2, d: 'Wlo=' }), db)).status).toBe(409);
+    sdk.put = async () => { throw new Error('store suspended'); };
+    expect((await handle(req('PUT', { base: 3, d: 'Wlo=' }), db)).status).toBe(502);
   });
 });
