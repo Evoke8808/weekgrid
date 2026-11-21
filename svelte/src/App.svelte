@@ -1,7 +1,6 @@
 <script>
   import { untrack } from 'svelte';
   import Header from './components/Header.svelte';
-  import Wipe from './components/Wipe.svelte';
   import Toast from './components/Toast.svelte';
   import Intro from './components/Intro.svelte';
   import Scene from './components/Scene.svelte';
@@ -47,6 +46,5 @@
 
 <div id="fx" aria-hidden="true"></div>
 <Sheet />
-<Wipe />
 <Toast />
 {#if intro}<Intro ondone={() => (intro = false)} />{/if}

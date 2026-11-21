@@ -354,25 +354,6 @@ input[type="checkbox"] { accent-color: var(--mint); width: 16px; height: 16px; }
 .toast.show { transform: translateX(-50%) translateY(0); }
 
 /* ---------- Page transitions ---------- */
-#wipe { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: repeat(7, 1fr); pointer-events: none; }
-#wipe i {
-  background: #050505; transform: translateY(102%);
-  border-top: 3px solid var(--d); box-shadow: 0 -18px 40px -8px color-mix(in srgb, var(--d) 45%, transparent);
-}
-#wipe i:nth-child(1) { --d: var(--blue); --n: 0; }
-#wipe i:nth-child(2) { --d: var(--violet); --n: 1; }
-#wipe i:nth-child(3) { --d: var(--mint); --n: 2; }
-#wipe i:nth-child(4) { --d: var(--amber); --n: 3; }
-#wipe i:nth-child(5) { --d: var(--coral); --n: 4; }
-#wipe i:nth-child(6) { --d: var(--cyan); --n: 5; }
-#wipe i:nth-child(7) { --d: var(--pink); --n: 6; }
-#wipe i { visibility: hidden; }
-#wipe.wipe-in i, #wipe.wipe-out i, #wipe.wipe-hold i { visibility: visible; }
-#wipe.wipe-hold i { transform: none; border-color: transparent; box-shadow: none; }
-#wipe.wipe-in i { animation: col-in 0.34s cubic-bezier(0.7, 0, 0.3, 1) both; animation-delay: calc(var(--n) * 34ms); }
-#wipe.wipe-out i { animation: col-out 0.55s cubic-bezier(0.7, 0, 0.2, 1) both; animation-delay: calc(var(--n) * 40ms); border-top: 0; border-bottom: 3px solid var(--d); box-shadow: 0 18px 40px -8px color-mix(in srgb, var(--d) 45%, transparent); }
-@keyframes col-in { from { transform: translateY(102%); } to { transform: none; } }
-@keyframes col-out { from { transform: none; } to { transform: translateY(-103%); } }
 
 .view.leave-l { animation: out-l 0.18s ease-in forwards; }
 .view.leave-r { animation: out-r 0.18s ease-in forwards; }
@@ -385,11 +366,11 @@ input[type="checkbox"] { accent-color: var(--mint); width: 16px; height: 16px; }
 
 /* ---------- Welcome ---------- */
 #intro {
-  position: fixed; inset: 0; z-index: 90; cursor: pointer;
+  position: fixed; inset: 0; z-index: 90; cursor: pointer; background: #000;
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px;
-  transition: opacity 0.4s, transform 0.5s var(--ease), filter 0.4s;
+  transition: opacity 0.5s ease, transform 0.6s var(--ease);
 }
-#intro.out { opacity: 0; transform: translateY(-60px) scale(1.08); filter: blur(10px); pointer-events: none; }
+#intro.out { opacity: 0; transform: scale(1.03); pointer-events: none; }
 .i-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; width: min(300px, 70vw); animation: grid-settle 0.9s var(--ease) 1.15s both; }
 .i-grid i {
   aspect-ratio: 1; border-radius: 8px; background: var(--d); opacity: var(--o);
@@ -572,14 +553,7 @@ body.locked { overflow: hidden; }
 @keyframes cell-wave { 50% { opacity: 1; transform: translateZ(26px) rotateX(18deg); } }
 .i-word { perspective: 600px; }
 @keyframes word-in { from { opacity: 0; transform: translateZ(-300px) rotateX(-90deg); filter: blur(10px); } }
-#intro.out { transform: perspective(900px) rotateX(24deg) translateY(-80px) scale(1.06); }
 
-/* Tab change: the seven columns swing in like doors instead of sliding */
-#wipe { perspective: 1200px; }
-#wipe i { transform-origin: 50% 100%; backface-visibility: hidden; }
-@keyframes col-in { from { transform: rotateX(-92deg); } to { transform: none; } }
-@keyframes col-out { from { transform: none; } to { transform: rotateX(92deg); transform-origin: 50% 0; } }
-#wipe.wipe-out i { transform-origin: 50% 0; }
 
 /* Blocks swing down into place; a done mark spins round */
 .blocks { perspective: 1000px; }
@@ -829,9 +803,6 @@ h2, .sheet-title {
 :root[data-theme="mono"] .view h3 { color: #f0f0f0; }
 :root[data-theme="mono"] .streak, :root[data-theme="mono"] .fig:nth-child(2) .num { color: #e5484d; }
 :root[data-theme="mono"] .hero-msg.win { color: #f0f0f0; }
-:root[data-theme="mono"] #wipe i:nth-child(odd) { --d: #f0f0f0; }
-:root[data-theme="mono"] #wipe i:nth-child(even) { --d: #8a8a8a; }
-:root[data-theme="mono"] #wipe i:nth-child(4) { --d: #e5484d; }
 
 /* theme switch in the header */
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

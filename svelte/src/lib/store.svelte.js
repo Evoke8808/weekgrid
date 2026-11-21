@@ -14,7 +14,6 @@ export const ui = $state({
   week: iso(mondayOf(new Date())),
   editDay: dayKey(new Date()),
   enter: 0, // bumped to replay a view's entrance animation
-  wipe: '', // '', 'wipe-in', 'wipe-out', 'wipe-hold'
   busy: false,
   slide: '', // day/week slide class on the view
   gym: null // open workout (later part)

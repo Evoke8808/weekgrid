@@ -24,7 +24,7 @@ src/lib/stats.js       day score, streak, week stats (pure)
 src/lib/store.svelte.js reactive state, saving, change stamps for sync, day rollover
 src/lib/motion.js      full / lite / off motion level
 src/lib/transitions.js tab transition, day/week slide
-src/components/        Header, Intro, Wipe, Toast, Scene, Sheet, GymSheet, CardioSheet, CardioCard, RestBar, Pace
+src/components/        Header, Intro, Toast, Scene, Sheet, GymSheet, CardioSheet, CardioCard, RestBar, Pace
 src/lib/effects.js     sparks, confetti
 src/lib/scene.js       3D background grid of recent weeks
 src/lib/tilt.js        card tilt (laptop), page lean (phone)
@@ -63,7 +63,7 @@ The service worker only runs in `npm run build` / `preview` / hosted, not in `np
 
 ## Progress
 
-- [x] Part 1: project, data layer with tests, app shell (header, tabs, intro, page wipe)
+- [x] Part 1: project, data layer with tests, app shell (header, tabs, intro)
 - [x] Part 2: Today (marking, notes, catch-up nudge, day slide, strip, bursts/confetti), 3D background grid, card tilt, phone lean
 - [x] Part 3: Week (average, streak, best day, bars, hours vs targets, 8-week heatmap, notes, week stepping)
 - [x] Part 4: Timetable editor (add/edit/delete blocks, copy a day, overlap warning)
@@ -72,5 +72,6 @@ The service worker only runs in `npm run build` / `preview` / hosted, not in `np
 - [x] Part 5: Settings (categories, theme, animations, streak threshold, export/import, sample week, clear)
 - [x] Part 6: gym log (sets, last session, suggested weight, extra sets/exercises, session pace), rest timer, cardio timer, extra workout, leaving-the-gym checklist, their Settings editors
 - [x] Part 7: offline app (service worker, safe auto-update, install button, storage protection), Vercel config
-- [ ] Host on Vercel (needs your account)
+- [x] Hosted on Vercel: https://weekgrid-murex.vercel.app (auto-deploys from main)
+- [x] Welcome screen fades into the app (column curtain removed)
 - [ ] Pairing-code sync

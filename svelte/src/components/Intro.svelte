@@ -1,5 +1,5 @@
 <script>
-  // Welcome sequence on open: the grid assembles, the name lands, then the curtain lifts.
+  // Welcome sequence on open: the grid assembles, the name lands, then it fades into the app.
   import { DAYS } from '../lib/constants.js';
   import { dayColor } from '../lib/theme.svelte.js';
   import { fmtDate } from '../lib/dates.js';
@@ -23,15 +23,13 @@
   }
 
   let out = $state(false);
-  ui.wipe = 'wipe-hold';
   ui.busy = true;
 
   function leave() {
     if (out) return;
     out = true;
     ui.enter++;
-    ui.wipe = 'wipe-out';
-    setTimeout(() => { ui.wipe = ''; ui.busy = false; ondone(); }, 900);
+    setTimeout(() => { ui.busy = false; ondone(); }, 600);
   }
 
   $effect(() => {

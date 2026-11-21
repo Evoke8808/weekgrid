@@ -11,7 +11,7 @@ beforeAll(() => {
 const settle = async (ms) => { await vi.advanceTimersByTimeAsync(ms); flushSync(); };
 
 describe('app', () => {
-  it('intro → Today: mark, step days, note → wipe to Week', async () => {
+  it('intro → Today: mark, step days, note → fade to Week', async () => {
     vi.useFakeTimers({ now: new Date(2026, 10, 18, 22, 30) }); // Wednesday 18 Nov, 22:30
     localStorage.clear();
     document.body.innerHTML = '<div id="app"></div>';
@@ -22,7 +22,7 @@ describe('app', () => {
     flushSync();
 
     expect(document.querySelectorAll('.tab')).toHaveLength(4);
-    expect(document.querySelector('#wipe').className).toBe('wipe-hold');
+    expect(document.querySelector('#wipe')).toBeNull(); // no column curtain on open
     await settle(3300 + 950);
     expect(document.querySelector('#intro')).toBeNull();
 
