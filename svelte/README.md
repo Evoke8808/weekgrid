@@ -32,6 +32,10 @@ src/lib/theme.svelte.js colour themes (Colour / Mono)
 src/lib/gym.js         workout + cardio logic (pure)
 src/lib/gymui.svelte.js sheets, rest/cardio timers, beeps
 src/views/             Today, Week, Timetable, Settings
+src/lib/sync.svelte.js pairing-code sync: create/join/leave, push on save, pull on return
+src/lib/synccrypto.js  code → room id + AES key (PBKDF2), seal/open (gzip + AES-GCM)
+src/lib/syncmerge.js   day-by-day merge, newest wins (pure)
+api/sync.js            Vercel function GET/PUT /api/sync (Upstash Redis); logic in api/_sync.js
 src/lib/pwa.svelte.js  service worker registration, safe updates, install prompt, storage protection
 pwa/sw.js              service worker template (offline cache, fonts, my-timetable.js)
 pwa/plugin.js          writes dist/sw.js with the built file list and a version hash
@@ -50,6 +54,23 @@ cache version; a new version downloads in the background and then:
 Settings → App shows the version, offline status, storage protection, and an
 Install button (Chrome/Edge). On iPhone: Safari → Share → Add to Home Screen.
 The service worker only runs in `npm run build` / `preview` / hosted, not in `npm run dev`.
+
+## Sync across devices
+
+Settings → Sync across devices → **Create sync code** on one device, then type the code into
+**Join** on the other. After that, changes upload a few seconds after you make them and download
+when you return to the app (and every 2 minutes while it is open).
+
+- Data is gzipped and encrypted with AES-GCM on the device. The key comes from the code, which
+  never leaves the device; the server stores the blob under a separate hash of the code.
+- Each day's log and the timetable carry a "last changed" time; the newer side wins, day by day.
+  Joining takes the synced timetable and keeps logged days from both devices.
+- Anyone with the code can read the data. **Stop syncing** turns it off on that device only.
+- `npm run dev` / `preview` include an in-memory sync server for testing on one machine.
+
+**Server setup (once):** Vercel → weekgrid project → Storage → Create Database → **Upstash Redis**
+(free) → connect to the project → redeploy. The function reads `KV_REST_API_URL` /
+`KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
 
 ## Deploy to Vercel
 
@@ -74,4 +95,4 @@ The service worker only runs in `npm run build` / `preview` / hosted, not in `np
 - [x] Part 7: offline app (service worker, safe auto-update, install button, storage protection), Vercel config
 - [x] Hosted on Vercel: https://weekgrid-murex.vercel.app (auto-deploys from main)
 - [x] Welcome screen fades into the app (column curtain removed)
-- [ ] Pairing-code sync
+- [x] Part 8: pairing-code sync (encrypted on device, day-by-day merge, Vercel function + Upstash Redis)

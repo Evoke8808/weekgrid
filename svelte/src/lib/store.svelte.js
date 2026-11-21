@@ -58,7 +58,7 @@ function stamp() {
 }
 
 const saveHooks = new Set();
-export const onSave = (fn) => { saveHooks.add(fn); return () => saveHooks.delete(fn); }; // sync plugs in here later
+export const onSave = (fn) => { saveHooks.add(fn); return () => saveHooks.delete(fn); }; // sync listens here
 
 export function save() {
   stamp();
@@ -67,7 +67,16 @@ export function save() {
   for (const fn of saveHooks) fn();
 }
 
-// Swap in a whole new state (import, reset, sync).
+// Take in data merged by sync: stored as is, without new "last changed" stamps or save hooks
+// (so it does not bounce straight back to the server).
+export function adopt(next) {
+  store.data = normalize(next);
+  rebuildShadow();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(store.data)); }
+  catch (e) { say('Could not save (storage blocked)'); }
+}
+
+// Swap in a whole new state (import, reset).
 export function replace(next) {
   store.data = normalize(next);
   save();

@@ -9,6 +9,8 @@
   import { dayColor } from '../lib/theme.svelte.js';
   import { packList, addMachine, deleteMachine, setPlanMachine, setPlanMinutes, addWorkout } from '../lib/gym.js';
   import { pwa, install, checkForUpdate, updateNow, isIos, VERSION } from '../lib/pwa.svelte.js';
+  import { sync, createSync, joinSync, leaveSync, syncNow } from '../lib/sync.svelte.js';
+  import { showCode } from '../lib/synccrypto.js';
 
   const s = $derived(store.data);
   let fileInput;
@@ -73,8 +75,44 @@
     say('Sample week loaded');
   }
 
-  function reset() {
-    if (!confirm('Delete all data? Export first if you want a backup.')) return;
+  // ---- Sync ----
+  let joinInput = $state('');
+  let syncErr = $state('');
+  let working = $state(false);
+  let reveal = $state(false);
+
+  async function doCreate() {
+    working = true; syncErr = '';
+    const r = await createSync();
+    if (r.error) syncErr = r.error; else reveal = true;
+    working = false;
+  }
+  async function doJoin() {
+    if (!joinInput.trim()) return;
+    if (!confirm('Join? Your timetable on this device is replaced by the synced one. Logged days from both devices are kept.')) return;
+    working = true; syncErr = '';
+    const r = await joinSync(joinInput);
+    if (r.error) syncErr = r.error; else joinInput = '';
+    working = false;
+  }
+  async function doLeave() {
+    if (!confirm('Stop syncing on this device? Your data stays here, and other devices keep syncing.')) return;
+    await leaveSync();
+    reveal = false;
+    say('Sync is off on this device');
+  }
+  async function copyCode() {
+    try { await navigator.clipboard.writeText(showCode(sync.code)); say('Code copied'); }
+    catch (e) { reveal = true; say('Copy failed. The code is shown'); }
+  }
+  const ago = (t) => {
+    const m = Math.round((Date.now() - t) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  };
+
+  async function reset() {
+    if (!confirm(sync.code ? 'Delete all data on this device? Sync is turned off here first, so your other devices keep their data.' : 'Delete all data? Export first if you want a backup.')) return;
+    if (sync.code) await leaveSync();
     replace(clearedState(s));
     refreshScene();
     say('Everything cleared');
@@ -195,7 +233,37 @@
 </div>
 
 <h3>Sync across devices</h3>
-<p class="muted small">Arrives in Part 8 with an easy pairing code. The original app still has GitHub sync in the meantime.</p>
+{#if sync.code}
+  <div class="panel sync-box">
+    <div class="app-row"><span>Sync code</span>
+      <button class="code-btn" onclick={() => (reveal = !reveal)} aria-label={reveal ? 'Hide code' : 'Show code'}>
+        <code class="sync-code">{reveal ? showCode(sync.code) : '••••-••••-••••'}</code>
+      </button>
+    </div>
+    <div class="app-row"><span>Status</span>
+      <strong class:ok={sync.status === 'ok'} class:bad={sync.status === 'error'}>
+        {sync.status === 'ok' ? (sync.last ? `Synced ${ago(sync.last)}` : 'On') : sync.status === 'syncing' ? 'Syncing…' : sync.text}
+      </strong>
+    </div>
+  </div>
+  <p class="muted small">Enter this code in Settings on your other devices. Anyone with the code can see your data, so keep it like a password.</p>
+  <div class="row">
+    <button class="btn" onclick={copyCode}>Copy code</button>
+    <button class="btn" onclick={() => syncNow({ quiet: false })} disabled={sync.status === 'syncing'}>Sync now</button>
+    <button class="btn danger" onclick={doLeave}>Stop syncing</button>
+  </div>
+{:else}
+  <p class="muted small">Keep your phone and laptop in step. Create a code on one device, then enter it on the other. Your data is encrypted on the device; the server cannot read it.</p>
+  <div class="row">
+    <button class="btn primary" onclick={doCreate} disabled={working}>{working ? 'Working…' : 'Create sync code'}</button>
+  </div>
+  <div class="row join-row">
+    <input class="field" type="text" bind:value={joinInput} placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"
+      aria-label="Sync code from your other device" onkeydown={(e) => { if (e.key === 'Enter') doJoin(); }} />
+    <button class="btn" onclick={doJoin} disabled={working || !joinInput.trim()}>Join</button>
+  </div>
+{/if}
+{#if syncErr}<p class="sync-err small">{syncErr}</p>{/if}
 
 <h3>Data</h3>
 <p class="muted small">Data stays on this device only, and works without internet. Export regularly to back it up or move it to another device.</p>

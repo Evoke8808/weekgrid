@@ -891,3 +891,11 @@ h2, .sheet-title {
 .app-row strong { font-weight: 700; text-align: right; }
 .app-row strong.ok { color: var(--mint); }
 .btn:disabled { opacity: 0.55; cursor: default; }
+
+/* ---------- Sync (Part 8) ---------- */
+.sync-box { display: grid; gap: 2px; padding: 6px 14px; margin-bottom: 8px; }
+.code-btn { background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--text); font: inherit; }
+.sync-code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.05rem; letter-spacing: 0.08em; font-weight: 700; }
+.app-row strong.bad, .sync-err { color: var(--coral); }
+.join-row { margin-top: 10px; }
+.join-row .field { flex: 1; min-width: 0; max-width: 240px; font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; text-transform: uppercase; }

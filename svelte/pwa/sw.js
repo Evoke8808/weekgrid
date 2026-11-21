@@ -64,6 +64,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (isFont(url)) return e.respondWith(font(req));
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.includes('/api/')) return; // sync calls always go to the network, never the cache
 
   // Opening the app: the cached shell, so it starts instantly and works offline.
   if (req.mode === 'navigate') {
