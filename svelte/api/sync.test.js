@@ -36,10 +36,13 @@ describe('sync api', () => {
 
   it('Vercel Blob store: conditional writes, conflicts and storage errors', async () => {
     class BlobPreconditionFailedError extends Error {}
+    class BlobNotFoundError extends Error {}
     const files = new Map(); let n = 0;
     const sdk = {
-      BlobPreconditionFailedError,
-      async get(p) { const f = files.get(p); return f ? { statusCode: 200, stream: new Response(f.body).body, blob: { etag: f.etag } } : null; },
+      BlobPreconditionFailedError, BlobNotFoundError,
+      // like the real service: get() hands back a delivery-network ETag that put() does not accept
+      async get(p) { const f = files.get(p); return f ? { statusCode: 200, stream: new Response(f.body).body, blob: { etag: `W/"${f.etag}-cdn"` } } : null; },
+      async head(p) { const f = files.get(p); if (!f) throw new BlobNotFoundError(); return { etag: f.etag }; },
       async put(p, body, o) {
         const f = files.get(p);
         if (o.ifMatch && (!f || f.etag !== o.ifMatch)) throw new BlobPreconditionFailedError();

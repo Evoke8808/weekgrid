@@ -66,11 +66,17 @@ export function blobDb(env = process.env, sdk = null) {
   const path = (id) => `sync/${id}.json`;
   const opts = { access: 'private', contentType: 'application/json', addRandomSuffix: false, cacheControlMaxAge: 60 };
 
+  // The ETag for conditional writes comes from head() (storage metadata). The one on a get()
+  // response comes through the delivery network and does not match what put() checks against.
   async function read(id) {
-    const { get } = await lib();
+    const { get, head, BlobNotFoundError } = await lib();
+    let meta;
+    try { meta = await head(path(id)); }
+    catch (e) { if (BlobNotFoundError && e instanceof BlobNotFoundError) return null; throw e; }
+    if (!meta) return null;
     const r = await get(path(id), { access: 'private', useCache: false });
     if (!r || r.statusCode !== 200 || !r.stream) return null;
-    return { room: JSON.parse(await new Response(r.stream).text()), etag: r.blob.etag };
+    return { room: JSON.parse(await new Response(r.stream).text()), etag: meta.etag };
   }
 
   return {
